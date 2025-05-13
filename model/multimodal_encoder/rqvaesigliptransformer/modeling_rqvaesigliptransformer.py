@@ -7,6 +7,7 @@ from .rqtransformer import RQTransformer
 
 class RQVAESIGLIPTransformer(PreTrainedModel):
     config_class = RQVAESIGLIPTransformerConfig
+
     def __init__(self, config: RQVAESIGLIPTransformerConfig):
         super().__init__(config)
 

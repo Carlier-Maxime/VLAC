@@ -21,15 +21,15 @@ def top_k_logits(logits, k):
     return out
 
 
-def top_p_probs(probs, p):    
+def top_p_probs(probs, p):
     sorted_probs, sorted_indices = torch.sort(probs, dim=-1, descending=True)
     cum_probs = torch.cumsum(sorted_probs, dim=-1)
-    
+
     sorted_idx_remove_cond = cum_probs >= p
-    
+
     sorted_idx_remove_cond[..., 1:] = sorted_idx_remove_cond[..., :-1].clone()
     sorted_idx_remove_cond[..., 0] = 0
-    
+
     indices_to_remove = sorted_idx_remove_cond.scatter(-1, sorted_indices, sorted_idx_remove_cond)
     probs = probs.masked_fill(indices_to_remove, 0.0)
     norm_probs = probs / torch.sum(probs, dim=-1, keepdim=True)
@@ -56,13 +56,13 @@ def sample_from_logits(logits, temperature=1.0, top_k=None, top_p=None):
 
     if top_k is not None:
         logits = top_k_logits(logits, top_k)
-    
+
     if torch.sum(torch.isnan(logits)):
         print('WARNING... NaN observed')
         logits[torch.isnan(logits)] = -float('Inf')
 
     probs = F.softmax(logits, dim=-1)
-    
+
     if top_p is not None:
         probs = top_p_probs(probs, top_p)
 
@@ -76,6 +76,7 @@ def sample_from_logits(logits, temperature=1.0, top_k=None, top_p=None):
 
 class RQTransformer(PreTrainedModel):
     config_class = RQTransformerConfig
+
     def __init__(self, config: RQTransformerConfig):
         super().__init__(config)
         self.in_mlp_1 = nn.Linear(config.input_embed_dim_1, config.embed_dim)
@@ -92,7 +93,7 @@ class RQTransformer(PreTrainedModel):
             ('layer_norm', nn.LayerNorm(config.embed_dim)),
             ('linear', nn.Linear(config.embed_dim, config.vocab_size)),
         ]))
-    
+
     def embed_with_model_aux(self, code, model_aux):
         xs_emb, _ = model_aux.get_code_emb_with_depth(code)
         return xs_emb
@@ -122,7 +123,7 @@ class RQTransformer(PreTrainedModel):
         head_outputs = self.classifier_mlp(head_outputs)
 
         return head_outputs
-    
+
     def generate(self, embed_from_body, model_aux=None, cfg=3.0):
         generate_idx = 1
         B, seq_len, _ = embed_from_body.shape
@@ -138,14 +139,14 @@ class RQTransformer(PreTrainedModel):
 
         logits = self.classifier_mlp(head_outputs)
 
-        logits = logits[B//2:, :] + cfg * (logits[:B//2, :] - logits[B//2:, :])
+        logits = logits[B // 2:, :] + cfg * (logits[:B // 2, :] - logits[B // 2:, :])
         code = sample_from_logits(logits, temperature=1.0, top_p=0.96, top_k=900)
-        code = code.reshape(B//2, seq_len, 1).repeat(2, 1, self.pos_emb_d.shape[1])
+        code = code.reshape(B // 2, seq_len, 1).repeat(2, 1, self.pos_emb_d.shape[1])
 
-        for i in range(self.pos_emb_d.shape[1]-1):
+        for i in range(self.pos_emb_d.shape[1] - 1):
             generate_idx += 1
             depth_ctx = self.embed_with_model_aux(code, model_aux)
-            depth_ctx = torch.cumsum(depth_ctx, dim=-2)[:, :, :i+1, :]
+            depth_ctx = torch.cumsum(depth_ctx, dim=-2)[:, :, :i + 1, :]
             if len(depth_ctx.shape) == 3:
                 depth_ctx = depth_ctx.unsqueeze(2)
             depth_ctx = self.in_mlp_1(depth_ctx)
@@ -166,10 +167,10 @@ class RQTransformer(PreTrainedModel):
 
             logits = self.classifier_mlp(head_outputs)
 
-            logits = logits[B//2:, :] + cfg * (logits[:B//2, :] - logits[B//2:, :])
+            logits = logits[B // 2:, :] + cfg * (logits[:B // 2, :] - logits[B // 2:, :])
             code_generate = sample_from_logits(logits, temperature=1.0, top_p=0.96, top_k=900)
-            code_generate = code_generate.reshape(B//2, seq_len).repeat(2, 1)
-            code[:, :, i+1] = code_generate
+            code_generate = code_generate.reshape(B // 2, seq_len).repeat(2, 1)
+            code[:, :, i + 1] = code_generate
 
         out_features = self.embed_with_model_aux(code, model_aux)
         out_features = torch.cumsum(out_features, dim=-2)[:, :, -1, :]

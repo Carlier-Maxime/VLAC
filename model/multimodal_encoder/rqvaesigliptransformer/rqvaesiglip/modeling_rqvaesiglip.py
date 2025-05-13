@@ -1,9 +1,7 @@
 import torch
 
-from torch import nn
 from torch.nn import functional as F
 from transformers import PreTrainedModel, AutoConfig, AutoModel
-from typing import Optional
 
 from .configuration_rqvaesiglip import RQVAESiglipConfig
 from .modules import Decoder
@@ -13,6 +11,7 @@ from .siglip import SiglipModel
 
 class RQVAESiglipModel(PreTrainedModel):
     config_class = RQVAESiglipConfig
+
     def __init__(self, config: RQVAESiglipConfig):
         super().__init__(config)
 
@@ -35,10 +34,10 @@ class RQVAESiglipModel(PreTrainedModel):
             self.decoder_latent_shape = config.decoder_latent_shape
         except:
             self.decoder_latent_shape = None
-        
+
         self.logit_scale = self.siglip_model.logit_scale
         self.logit_bias = self.siglip_model.logit_bias
-        
+
     def encode_image(self, image):
         vision_model = self.siglip_model.vision_model
         hidden_states = vision_model.embeddings(image)
@@ -62,22 +61,23 @@ class RQVAESiglipModel(PreTrainedModel):
             hidden_states = layer_outputs[0]
             if i == len(vision_model.encoder.layers) - 2:
                 B, L, C = hidden_states.shape
-                hidden_states = hidden_states.reshape(B, int(L**0.5), int(L**0.5), C)
+                hidden_states = hidden_states.reshape(B, int(L ** 0.5), int(L ** 0.5), C)
                 z_q, quant_loss, code = self.quantizer(hidden_states)
-                
+
                 return code, z_q
+        return None
 
     def decode(self, z_q):
         z_q = z_q.permute(0, 3, 1, 2).contiguous()
 
         if self.decoder_latent_shape is not None:
             z_q = F.interpolate(z_q.to(torch.float32), size=tuple(self.decoder_latent_shape), mode='bilinear').to(torch.bfloat16)
-            
+
         z_q = self.post_quant_conv(z_q)
         out = self.decoder(z_q)
 
         return out
-    
+
     @torch.no_grad()
     def get_code_emb_with_depth(self, code):
         return self.quantizer.embed_code_with_depth(code)

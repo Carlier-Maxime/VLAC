@@ -82,7 +82,7 @@ class ResnetBlock(nn.Module):
         h = self.conv1(h)
 
         if temb is not None:
-            h = h + self.temb_proj(nonlinearity(temb))[:,:,None,None]
+            h = h + self.temb_proj(nonlinearity(temb))[:, :, None, None]
 
         h = self.norm2(h)
         h = nonlinearity(h)
@@ -95,7 +95,7 @@ class ResnetBlock(nn.Module):
             else:
                 x = self.nin_shortcut(x)
 
-        return x+h
+        return x + h
 
     def forward(self, x, temb):
         if self.checkpointing and self.training:
@@ -132,7 +132,6 @@ class AttnBlock(nn.Module):
                                         stride=1,
                                         padding=0)
 
-
     def forward(self, x):
         h_ = x
         h_ = self.norm(h_)
@@ -140,22 +139,22 @@ class AttnBlock(nn.Module):
         k = self.k(h_)
         v = self.v(h_)
 
-        b,c,h,w = q.shape
-        q = q.reshape(b,c,h*w)
-        q = q.permute(0,2,1)
-        k = k.reshape(b,c,h*w)
-        w_ = torch.bmm(q,k)
-        w_ = w_ * (int(c)**(-0.5))
+        b, c, h, w = q.shape
+        q = q.reshape(b, c, h * w)
+        q = q.permute(0, 2, 1)
+        k = k.reshape(b, c, h * w)
+        w_ = torch.bmm(q, k)
+        w_ = w_ * (int(c) ** (-0.5))
         w_ = torch.nn.functional.softmax(w_, dim=2)
 
-        v = v.reshape(b,c,h*w)
-        w_ = w_.permute(0,2,1)
-        h_ = torch.bmm(v,w_)
-        h_ = h_.reshape(b,c,h,w)
+        v = v.reshape(b, c, h * w)
+        w_ = w_.permute(0, 2, 1)
+        h_ = torch.bmm(v, w_)
+        h_ = h_.reshape(b, c, h, w)
 
         h_ = self.proj_out(h_)
 
-        return x+h_
+        return x + h_
 
 
 class Decoder(nn.Module):
@@ -163,6 +162,7 @@ class Decoder(nn.Module):
                  attn_resolutions, dropout=0.0, resamp_with_conv=True, in_channels,
                  resolution, z_channels, give_pre_end=False, **ignorekwargs):
         super().__init__()
+        self.last_z_shape = None
         self.ch = ch
         self.temb_ch = 0
         self.num_resolutions = len(ch_mult)
@@ -171,9 +171,9 @@ class Decoder(nn.Module):
         self.in_channels = in_channels
         self.give_pre_end = give_pre_end
 
-        in_ch_mult = (1,)+tuple(ch_mult)
-        block_in = ch*ch_mult[self.num_resolutions-1]
-        curr_res = resolution // 2**(self.num_resolutions-1)
+        in_ch_mult = (1,) + tuple(ch_mult)
+        block_in = ch * ch_mult[self.num_resolutions - 1]
+        curr_res = resolution // 2 ** (self.num_resolutions - 1)
         self.z_shape = (1, z_channels, curr_res, curr_res)
 
         self.conv_in = torch.nn.Conv2d(z_channels,
@@ -197,8 +197,8 @@ class Decoder(nn.Module):
         for i_level in reversed(range(self.num_resolutions)):
             block = nn.ModuleList()
             attn = nn.ModuleList()
-            block_out = ch*ch_mult[i_level]
-            for i_block in range(self.num_res_blocks+1):
+            block_out = ch * ch_mult[i_level]
+            for i_block in range(self.num_res_blocks + 1):
                 block.append(ResnetBlock(in_channels=block_in,
                                          out_channels=block_out,
                                          temb_channels=self.temb_ch,
@@ -233,7 +233,7 @@ class Decoder(nn.Module):
         h = self.mid.block_2(h, temb)
 
         for i_level in reversed(range(self.num_resolutions)):
-            for i_block in range(self.num_res_blocks+1):
+            for i_block in range(self.num_res_blocks + 1):
                 h = self.up[i_level].block[i_block](h, temb)
                 if len(self.up[i_level].attn) > 0:
                     h = self.up[i_level].attn[i_block](h)

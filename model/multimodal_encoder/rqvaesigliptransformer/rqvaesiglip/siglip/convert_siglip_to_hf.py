@@ -103,14 +103,14 @@ def get_siglip_config(model_name):
 
 
 def create_rename_keys(config):
-    rename_keys = []
+    rename_keys = [
+        ("params/img/embedding/kernel", "vision_model.embeddings.patch_embedding.weight"),
+        ("params/img/embedding/bias", "vision_model.embeddings.patch_embedding.bias"),
+        ("params/img/pos_embedding", "vision_model.embeddings.position_embedding.weight")
+    ]
     # fmt: off
 
     # vision encoder
-
-    rename_keys.append(("params/img/embedding/kernel", "vision_model.embeddings.patch_embedding.weight"))
-    rename_keys.append(("params/img/embedding/bias", "vision_model.embeddings.patch_embedding.bias"))
-    rename_keys.append(("params/img/pos_embedding", "vision_model.embeddings.position_embedding.weight"))
 
     for i in range(config.vision_config.num_hidden_layers):
         rename_keys.append((f"params/img/Transformer/encoderblock_{i}/LayerNorm_0/scale", f"vision_model.encoder.layers.{i}.layer_norm1.weight"))
@@ -231,13 +231,6 @@ def read_in_q_k_v_head(state_dict, config):
     state_dict["vision_model.head.attention.in_proj_bias"] = torch.from_numpy(
         np.concatenate([query_proj_bias, key_proj_bias, value_proj_bias], axis=0)
     )
-
-
-# We will verify our results on an image of cute cats
-def prepare_img():
-    url = "http://images.cocodataset.org/val2017/000000039769.jpg"
-    image = Image.open(requests.get(url, stream=True).raw)
-    return image
 
 
 def flatten_nested_dict(params, parent_key="", sep="/"):

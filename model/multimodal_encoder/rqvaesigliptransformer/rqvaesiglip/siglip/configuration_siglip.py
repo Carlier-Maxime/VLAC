@@ -35,12 +35,12 @@ class SiglipTextConfig(PretrainedConfig):
     configuration with the defaults will yield a similar configuration to that of the text encoder of the Siglip
     [google/siglip-base-patch16-224](https://huggingface.co/google/siglip-base-patch16-224) architecture.
 
-    Configuration objects inherit from [`PretrainedConfig`] and can be used to control the model outputs. Read the
+    Configuration objects are inherited from [`PretrainedConfig`] and can be used to control the model outputs. Read the
     documentation from [`PretrainedConfig`] for more information.
 
     Args:
-        vocab_size (`int`, *optional*, defaults to 32000):
-            Vocabulary size of the Siglip text model. Defines the number of different tokens that can be represented by
+        vocab_size (`int`, *optional*, defaults to 32,000):
+            Vocabulary size of the Siglip text model. Define the number of different tokens that can be represented by
             the `inputs_ids` passed when calling [`SiglipModel`].
         hidden_size (`int`, *optional*, defaults to 768):
             Dimensionality of the encoder layers and the pooler layer.

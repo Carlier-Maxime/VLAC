@@ -18,7 +18,6 @@ from typing import Dict, List, Optional, Union
 
 from transformers.image_processing_utils import BaseImageProcessor, BatchFeature, get_size_dict
 from transformers.image_transforms import (
-    center_crop,
     resize,
     rescale,
     normalize,
@@ -33,8 +32,6 @@ from transformers.image_utils import (
     ChannelDimension,
     ImageInput,
     PILImageResampling,
-    infer_channel_dimension_format,
-    # is_scaled_image,
     make_list_of_images,
     to_numpy_array,
     valid_images,
@@ -43,6 +40,7 @@ from transformers.utils import TensorType, is_vision_available, logging
 import numpy as np
 
 logger = logging.get_logger(__name__)
+
 
 def is_scaled_image(image: np.ndarray) -> bool:
     """
@@ -92,24 +90,24 @@ class SiglipImageProcessor(BaseImageProcessor):
     model_input_names = ["pixel_values"]
 
     def __init__(
-        self,
-        do_resize: bool = True,
-        size: Dict[str, int] = None,
-        resample: PILImageResampling = PILImageResampling.BICUBIC,
-        do_rescale: bool = True,
-        rescale_factor: Union[int, float] = 1 / 255,
-        do_normalize: bool = True,
-        image_mean: Optional[Union[float, List[float]]] = None,
-        image_std: Optional[Union[float, List[float]]] = None,
-        do_convert_rgb: bool = True,
-        **kwargs,
+            self,
+            do_resize: bool = True,
+            size: Dict[str, int] = None,
+            resample: PILImageResampling = PILImageResampling.BICUBIC,
+            do_rescale: bool = True,
+            rescale_factor: Union[int, float] = 1 / 255,
+            do_normalize: bool = True,
+            image_mean: Optional[Union[float, List[float]]] = None,
+            image_std: Optional[Union[float, List[float]]] = None,
+            do_convert_rgb: bool = True,
+            **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         size = size if size is not None else {"shortest_edge": 384}
         size = get_size_dict(size, default_to_square=False)
         image_mean = image_mean if image_mean is not None else IMAGENET_STANDARD_MEAN
         image_std = image_std if image_std is not None else IMAGENET_STANDARD_STD
-        
+
         self.do_resize = do_resize
         self.size = size
         self.resample = resample
@@ -121,12 +119,12 @@ class SiglipImageProcessor(BaseImageProcessor):
         self.do_convert_rgb = do_convert_rgb
 
     def resize(
-        self,
-        image: np.ndarray,
-        size: Dict[str, int],
-        resample: PILImageResampling = PILImageResampling.BICUBIC,
-        data_format: Optional[Union[str, ChannelDimension]] = None,
-        **kwargs,
+            self,
+            image: np.ndarray,
+            size: Dict[str, int],
+            resample: PILImageResampling = PILImageResampling.BICUBIC,
+            data_format: Optional[Union[str, ChannelDimension]] = None,
+            **kwargs,
     ) -> np.ndarray:
         """
         Resize an image. The shortest edge of the image is resized to size["shortest_edge"], with the longest edge
@@ -155,21 +153,21 @@ class SiglipImageProcessor(BaseImageProcessor):
         return resize(image, size=output_size, resample=resample, data_format=data_format, **kwargs)
 
     def preprocess(
-        self,
-        images: ImageInput,
-        do_resize: bool = None,
-        size: Dict[str, int] = None,
-        resample: PILImageResampling = None,
-        do_rescale: bool = None,
-        rescale_factor: float = None,
-        do_normalize: bool = None,
-        image_mean: Optional[Union[float, List[float]]] = None,
-        image_std: Optional[Union[float, List[float]]] = None,
-        do_convert_rgb: bool = None,
-        return_tensors: Optional[Union[str, TensorType]] = None,
-        data_format: Optional[ChannelDimension] = ChannelDimension.FIRST,
-        input_data_format: Optional[Union[str, ChannelDimension]] = None,
-        **kwargs,
+            self,
+            images: ImageInput,
+            do_resize: bool = None,
+            size: Dict[str, int] = None,
+            resample: PILImageResampling = None,
+            do_rescale: bool = None,
+            rescale_factor: float = None,
+            do_normalize: bool = None,
+            image_mean: Optional[Union[float, List[float]]] = None,
+            image_std: Optional[Union[float, List[float]]] = None,
+            do_convert_rgb: bool = None,
+            return_tensors: Optional[Union[str, TensorType]] = None,
+            data_format: Optional[ChannelDimension] = ChannelDimension.FIRST,
+            input_data_format: Optional[Union[str, ChannelDimension]] = None,
+            **kwargs,
     ) -> PIL.Image.Image:
         """
         Preprocess an image or batch of images.
@@ -229,7 +227,6 @@ class SiglipImageProcessor(BaseImageProcessor):
         image_std = image_std if image_std is not None else self.image_std
         do_convert_rgb = do_convert_rgb if do_convert_rgb is not None else self.do_convert_rgb
 
-
         images = make_list_of_images(images)
 
         if not valid_images(images):
@@ -263,7 +260,7 @@ class SiglipImageProcessor(BaseImageProcessor):
         # if input_data_format is None:
         #     # We assume that all images have the same channel dimension format.
         #     input_data_format = infer_channel_dimension_format(images[0])
-        
+
         if do_resize:
             images = [self.resize(image=image, size=size, resample=resample) for image in images]
 
@@ -275,7 +272,7 @@ class SiglipImageProcessor(BaseImageProcessor):
             for image in images:
                 if get_channel_dimension_axis(image) == 0:
                     image = image.transpose((1, 2, 0))
-                if image.shape[-1] == 1:    
+                if image.shape[-1] == 1:
                     image = np.dstack((image, image, image))
                 output_images.append(image)
             images = output_images
@@ -296,7 +293,6 @@ class SiglipImageProcessor(BaseImageProcessor):
             images = [normalize(image=image, mean=image_mean, std=image_std) for image in images]
 
         images = [to_channel_dimension_format(image, data_format) for image in images]
-
 
         data = {"pixel_values": images}
         return BatchFeature(data=data, tensor_type=return_tensors)

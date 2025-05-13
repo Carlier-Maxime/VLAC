@@ -80,7 +80,6 @@ if TYPE_CHECKING:
         pass
     else:
         from .modeling_siglip import (
-            SIGLIP_PRETRAINED_MODEL_ARCHIVE_LIST,
             SiglipModel,
             SiglipPreTrainedModel,
             SiglipTextModel,

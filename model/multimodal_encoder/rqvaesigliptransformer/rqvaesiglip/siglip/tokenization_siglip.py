@@ -27,11 +27,9 @@ from transformers.convert_slow_tokenizer import import_protobuf
 from transformers.tokenization_utils import PreTrainedTokenizer
 from transformers.tokenization_utils_base import AddedToken
 
-
 if TYPE_CHECKING:
     from transformers.tokenization_utils_base import TextInput
 from transformers.utils import logging, requires_backends
-
 
 logger = logging.get_logger(__name__)
 
@@ -97,16 +95,16 @@ class SiglipTokenizer(PreTrainedTokenizer):
     model_input_names = ["input_ids", "attention_mask"]
 
     def __init__(
-        self,
-        vocab_file,
-        eos_token="</s>",
-        unk_token="<unk>",
-        pad_token="</s>",
-        additional_special_tokens=None,
-        sp_model_kwargs: Optional[Dict[str, Any]] = None,
-        model_max_length=64,
-        do_lower_case=True,
-        **kwargs,
+            self,
+            vocab_file,
+            eos_token="</s>",
+            unk_token="<unk>",
+            pad_token="</s>",
+            additional_special_tokens=None,
+            sp_model_kwargs: Optional[Dict[str, Any]] = None,
+            model_max_length=64,
+            do_lower_case=True,
+            **kwargs,
     ) -> None:
         requires_backends(self, "protobuf")
 
@@ -171,7 +169,7 @@ class SiglipTokenizer(PreTrainedTokenizer):
 
     # Copied from transformers.models.t5.tokenization_t5.T5Tokenizer.get_special_tokens_mask
     def get_special_tokens_mask(
-        self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None, already_has_special_tokens: bool = False
+            self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None, already_has_special_tokens: bool = False
     ) -> List[int]:
         """
         Retrieve sequence ids from a token list that has no special tokens added. This method is called when adding
@@ -212,7 +210,7 @@ class SiglipTokenizer(PreTrainedTokenizer):
 
     # Copied from transformers.models.t5.tokenization_t5.T5Tokenizer.create_token_type_ids_from_sequences
     def create_token_type_ids_from_sequences(
-        self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None
+            self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None
     ) -> List[int]:
         """
         Create a mask from the two sequences passed to be used in a sequence-pair classification task. T5 does not make
@@ -235,7 +233,7 @@ class SiglipTokenizer(PreTrainedTokenizer):
 
     # Copied from transformers.models.t5.tokenization_t5.T5Tokenizer.build_inputs_with_special_tokens
     def build_inputs_with_special_tokens(
-        self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None
+            self, token_ids_0: List[int], token_ids_1: Optional[List[int]] = None
     ) -> List[int]:
         """
         Build model inputs from a sequence or a pair of sequence for sequence classification tasks by concatenating and
@@ -335,7 +333,7 @@ class SiglipTokenizer(PreTrainedTokenizer):
         # 1. Encode string + prefix ex: "<unk> Hey"
         tokens = self.sp_model.encode(self.unk_token + text, out_type=str)
         # 2. Remove self.unk_token from ['<','unk','>', '▁Hey']
-        return tokens[self.unk_token_length :] if len(tokens) >= self.unk_token_length else tokens
+        return tokens[self.unk_token_length:] if len(tokens) >= self.unk_token_length else tokens
 
     # Copied from transformers.models.t5.tokenization_t5.T5Tokenizer._convert_token_to_id
     def _convert_token_to_id(self, token):

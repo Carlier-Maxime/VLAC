@@ -3,6 +3,7 @@ from transformers import PretrainedConfig
 
 class RQVAESIGLIPTransformerConfig(PretrainedConfig):
     model_type = "rqvaesigliptransformer_model"
+
     def __init__(
         self,
         rqvaesiglip=None,

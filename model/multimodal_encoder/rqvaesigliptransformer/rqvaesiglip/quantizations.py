@@ -7,7 +7,6 @@ import torch
 import torch.distributed as dist
 
 from torch import nn
-from torch.nn import functional as F
 from typing import Iterable
 
 
@@ -60,20 +59,20 @@ class VQEmbedding(nn.Embedding):
     @torch.no_grad()
     def _tile_with_noise(self, x, target_n):
         B, embed_dim = x.shape
-        n_repeats = (target_n + B -1) // B
+        n_repeats = (target_n + B - 1) // B
         std = x.new_ones(embed_dim) * 0.01 / np.sqrt(embed_dim)
         x = x.repeat(n_repeats, 1)
         x = x + torch.rand_like(x) * std
-        return x    
-    
+        return x
+
     @torch.no_grad()
     def _update_buffers(self, vectors, idxs):
 
-        n_embed, embed_dim = self.weight.shape[0]-1, self.weight.shape[-1]
-        
+        n_embed, embed_dim = self.weight.shape[0] - 1, self.weight.shape[-1]
+
         vectors = vectors.reshape(-1, embed_dim)
         idxs = idxs.reshape(-1)
-        
+
         n_vectors = vectors.shape[0]
         n_total_embed = n_embed
 
@@ -92,20 +91,20 @@ class VQEmbedding(nn.Embedding):
 
         self.cluster_size_ema.mul_(self.decay).add_(cluster_size, alpha=1 - self.decay)
         self.embed_ema.mul_(self.decay).add_(vectors_sum_per_cluster, alpha=1 - self.decay)
-        
+
         if self.restart_unused_codes:
             if n_vectors < n_embed:
                 vectors = self._tile_with_noise(vectors, n_embed)
             n_vectors = vectors.shape[0]
             _vectors_random = vectors[torch.randperm(n_vectors, device=vectors.device)][:n_embed]
-            
+
             if dist.is_initialized():
                 dist.broadcast(_vectors_random, 0)
-        
+
             usage = (self.cluster_size_ema.view(-1, 1) >= 1).float()
-            self.embed_ema.mul_(usage).add_(_vectors_random * (1-usage))
+            self.embed_ema.mul_(usage).add_(_vectors_random * (1 - usage))
             self.cluster_size_ema.mul_(usage.view(-1))
-            self.cluster_size_ema.add_(torch.ones_like(self.cluster_size_ema) * (1-usage).view(-1))
+            self.cluster_size_ema.add_(torch.ones_like(self.cluster_size_ema) * (1 - usage).view(-1))
 
     @torch.no_grad()
     def _update_embedding(self):
@@ -113,7 +112,7 @@ class VQEmbedding(nn.Embedding):
         n_embed = self.weight.shape[0] - 1
         n = self.cluster_size_ema.sum()
         normalized_cluster_size = (
-            n * (self.cluster_size_ema + self.eps) / (n + n_embed * self.eps)
+                n * (self.cluster_size_ema + self.eps) / (n + n_embed * self.eps)
         )
         self.weight[:-1, :] = self.embed_ema / normalized_cluster_size.reshape(-1, 1)
 
@@ -122,7 +121,7 @@ class VQEmbedding(nn.Embedding):
         if self.training:
             if self.ema:
                 self._update_buffers(inputs, embed_idxs)
-        
+
         embeds = self.embed(embed_idxs)
 
         if self.ema and self.training:
@@ -171,7 +170,7 @@ class RQBottleneck(nn.Module):
         self.latent_shape = torch.Size(latent_shape)
         self.code_shape = torch.Size(code_shape)
         self.shape_divisor = torch.Size([latent_shape[i] // code_shape[i] for i in range(len(latent_shape))])
-        
+
         self.shared_codebook = shared_codebook
         if self.shared_codebook:
             if isinstance(n_embed, Iterable) or isinstance(decay, Iterable):
@@ -185,16 +184,16 @@ class RQBottleneck(nn.Module):
         assert len(self.decay) == self.code_shape[-1]
 
         if self.shared_codebook:
-            codebook0 = VQEmbedding(self.n_embed[0], 
-                                    embed_dim, 
-                                    decay=self.decay[0], 
+            codebook0 = VQEmbedding(self.n_embed[0],
+                                    embed_dim,
+                                    decay=self.decay[0],
                                     restart_unused_codes=restart_unused_codes,
                                     )
             self.codebooks = nn.ModuleList([codebook0 for _ in range(self.code_shape[-1])])
         else:
-            codebooks = [VQEmbedding(self.n_embed[idx], 
-                                     embed_dim, 
-                                     decay=self.decay[idx], 
+            codebooks = [VQEmbedding(self.n_embed[idx],
+                                     embed_dim,
+                                     decay=self.decay[idx],
                                      restart_unused_codes=restart_unused_codes,
                                      ) for idx in range(self.code_shape[-1])]
             self.codebooks = nn.ModuleList(codebooks)
@@ -205,9 +204,9 @@ class RQBottleneck(nn.Module):
         (B, H, W, D) = x.shape
         (rH, rW, _) = self.shape_divisor
 
-        x = x.reshape(B, H//rH, rH, W//rW, rW, D)
+        x = x.reshape(B, H // rH, rH, W // rW, rW, D)
         x = x.permute(0, 1, 3, 2, 4, 5)
-        x = x.reshape(B, H//rH, W//rW, -1)
+        x = x.reshape(B, H // rH, W // rW, -1)
 
         return x
 
@@ -218,7 +217,7 @@ class RQBottleneck(nn.Module):
 
         x = x.reshape(B, h, w, rH, rW, D)
         x = x.permute(0, 1, 3, 2, 4, 5)
-        x = x.reshape(B, h*rH, w*rW, D)
+        x = x.reshape(B, h * rH, w * rW, D)
 
         return x
 
@@ -254,7 +253,7 @@ class RQBottleneck(nn.Module):
 
             quant_list.append(aggregated_quants.clone())
             code_list.append(code.unsqueeze(-1))
-        
+
         codes = torch.cat(code_list, dim=-1)
         return quant_list, codes
 
@@ -267,41 +266,41 @@ class RQBottleneck(nn.Module):
         quants_trunc = x + (quants_trunc - x).detach()
 
         return quants_trunc, commitment_loss, codes
-    
+
     def compute_commitment_loss(self, x, quant_list):
         r"""
         Compute the commitment loss for the residual quantization.
         The loss is iteratively computed by aggregating quantized features.
         """
         loss_list = []
-        
+
         for idx, quant in enumerate(quant_list):
-            partial_loss = (x-quant.detach()).pow(2.0).mean()
+            partial_loss = (x - quant.detach()).pow(2.0).mean()
             loss_list.append(partial_loss)
-        
+
         commitment_loss = torch.mean(torch.stack(loss_list))
         return commitment_loss
-    
+
     @torch.no_grad()
     def embed_code(self, code):
         assert code.shape[1:] == self.code_shape
-        
+
         code_slices = torch.chunk(code, chunks=code.shape[-1], dim=-1)
 
         if self.shared_codebook:
             embeds = [self.codebooks[0].embed(code_slice) for i, code_slice in enumerate(code_slices)]
         else:
             embeds = [self.codebooks[i].embed(code_slice) for i, code_slice in enumerate(code_slices)]
-        
+
         embeds = torch.cat(embeds, dim=-2).sum(-2)
         embeds = self.to_latent_shape(embeds)
 
         return embeds
-    
+
     @torch.no_grad()
     def embed_code_with_depth(self, code, to_latent_shape=False):
         assert code.shape[-1] == self.code_shape[-1]
-        
+
         code_slices = torch.chunk(code, chunks=code.shape[-1], dim=-1)
 
         if self.shared_codebook:
@@ -312,5 +311,5 @@ class RQBottleneck(nn.Module):
         if to_latent_shape:
             embeds = [self.to_latent_shape(embed.squeeze(-2)).unsqueeze(-2) for embed in embeds]
         embeds = torch.cat(embeds, dim=-2)
-        
+
         return embeds, None
