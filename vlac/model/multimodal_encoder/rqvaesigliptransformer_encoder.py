@@ -6,9 +6,9 @@ from .rqvaesigliptransformer import RQVAESIGLIPTransformerConfig, RQVAESIGLIPTra
 
 
 class RQVAESIGLIPTransformerVisionTower(nn.Module):
-    def __init__(self, model_name_or_path):
+    def __init__(self, model_name_or_path, config=None):
         super().__init__()
-        self.config = RQVAESIGLIPTransformerConfig.from_pretrained(model_name_or_path)
+        self.config = RQVAESIGLIPTransformerConfig.from_pretrained(model_name_or_path) if config is None else config
         self.vision_tower = RQVAESIGLIPTransformer.from_pretrained(model_name_or_path, config=self.config)
         self.is_loaded = True
 
