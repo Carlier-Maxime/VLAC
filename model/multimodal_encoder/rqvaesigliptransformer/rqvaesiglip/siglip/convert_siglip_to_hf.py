@@ -288,7 +288,7 @@ def convert_siglip_checkpoint(model_name, pytorch_dump_folder_path, verify_logit
     tokenizer = SiglipTokenizer(vocab_file=vocab_file, model_input_names=["input_ids"])
     processor = SiglipProcessor(image_processor=image_processor, tokenizer=tokenizer)
 
-    # verify on dummy images and texts
+    # verify on fake images and texts
     url_1 = "https://cdn.openai.com/multimodal-neurons/assets/apple/apple-ipod.jpg"
     image_1 = Image.open(requests.get(url_1, stream=True).raw).convert("RGB")
     url_2 = "https://cdn.openai.com/multimodal-neurons/assets/apple/apple-blank.jpg"

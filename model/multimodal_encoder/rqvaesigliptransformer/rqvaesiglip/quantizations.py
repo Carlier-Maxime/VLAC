@@ -238,7 +238,6 @@ class RQBottleneck(nn.Module):
             - quant_list[i]: (B, h, w, embed_dim)
             - codes: (B, h, w, d)
         """
-        B, h, w, embed_dim = x.shape
 
         residual_feature = x.detach().clone()
 
