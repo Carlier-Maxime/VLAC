@@ -1037,6 +1037,22 @@ class SiglipModel(SiglipPreTrainedModel):
 
         return pooled_output
 
+    def process_outputs(self, output_attentions, output_hidden_states, return_dict, pixel_values):
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        vision_outputs = self.vision_model(
+            pixel_values=pixel_values,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        return output_attentions, output_hidden_states, return_dict, vision_outputs
+
     @add_start_docstrings_to_model_forward(SIGLIP_VISION_INPUTS_DOCSTRING)
     def get_image_features(
             self,
@@ -1070,22 +1086,8 @@ class SiglipModel(SiglipPreTrainedModel):
         ...     image_features = model.get_image_features(**inputs)
         ```"""
         # Use SiglipModel's config for some fields (if specified) instead of those of vision & text components.
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        vision_outputs = self.vision_model(
-            pixel_values=pixel_values,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
-
-        pooled_output = vision_outputs[1]
-
-        return pooled_output
+        output_attentions, output_hidden_states, return_dict, vision_outputs = self.process_outputs(output_attentions, output_hidden_states, return_dict, pixel_values)
+        return vision_outputs[1]
 
     @add_start_docstrings_to_model_forward(SIGLIP_INPUTS_DOCSTRING)
     @replace_return_docstrings(output_type=SiglipOutput, config_class=SiglipConfig)
@@ -1129,18 +1131,7 @@ class SiglipModel(SiglipPreTrainedModel):
         31.9% that image 0 is 'a photo of 2 cats'
         ```"""
         # Use SigLIP model's config for some fields (if specified) instead of those of vision and text components.
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        vision_outputs = self.vision_model(
-            pixel_values=pixel_values,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
+        output_attentions, output_hidden_states, return_dict, vision_outputs = self.process_outputs(output_attentions, output_hidden_states, return_dict, pixel_values)
 
         text_outputs = self.text_model(
             input_ids=input_ids,

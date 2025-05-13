@@ -281,34 +281,26 @@ class RQBottleneck(nn.Module):
         return commitment_loss
 
     @torch.no_grad()
+    def __embed_code(self, code):
+        code_slices = torch.chunk(code, chunks=code.shape[-1], dim=-1)
+        return [self.codebooks[0 if self.shared_codebook else i].embed(code_slice) for i, code_slice in enumerate(code_slices)]
+
+    @torch.no_grad()
     def embed_code(self, code):
         assert code.shape[1:] == self.code_shape
-
-        code_slices = torch.chunk(code, chunks=code.shape[-1], dim=-1)
-
-        if self.shared_codebook:
-            embeds = [self.codebooks[0].embed(code_slice) for i, code_slice in enumerate(code_slices)]
-        else:
-            embeds = [self.codebooks[i].embed(code_slice) for i, code_slice in enumerate(code_slices)]
-
+        embeds = self.__embed_code(code)
         embeds = torch.cat(embeds, dim=-2).sum(-2)
         embeds = self.to_latent_shape(embeds)
-
         return embeds
 
     @torch.no_grad()
     def embed_code_with_depth(self, code, to_latent_shape=False):
         assert code.shape[-1] == self.code_shape[-1]
 
-        code_slices = torch.chunk(code, chunks=code.shape[-1], dim=-1)
-
-        if self.shared_codebook:
-            embeds = [self.codebooks[0].embed(code_slice) for i, code_slice in enumerate(code_slices)]
-        else:
-            embeds = [self.codebooks[i].embed(code_slice) for i, code_slice in enumerate(code_slices)]
+        embeds = self.__embed_code(code)
 
         if to_latent_shape:
             embeds = [self.to_latent_shape(embed.squeeze(-2)).unsqueeze(-2) for embed in embeds]
         embeds = torch.cat(embeds, dim=-2)
 
-        return embeds, None
+        return embeds

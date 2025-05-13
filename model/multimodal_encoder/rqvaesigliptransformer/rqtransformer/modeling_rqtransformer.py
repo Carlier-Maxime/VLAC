@@ -95,8 +95,7 @@ class RQTransformer(PreTrainedModel):
         ]))
 
     def embed_with_model_aux(self, code, model_aux):
-        xs_emb, _ = model_aux.get_code_emb_with_depth(code)
-        return xs_emb
+        return model_aux.get_code_emb_with_depth(code)
 
     def forward(self, embed_from_body, code, model_aux=None):
         B, seq_len, D = code.shape
