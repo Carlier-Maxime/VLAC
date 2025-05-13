@@ -1,8 +1,8 @@
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from gpu_memory_utils import print_gpu_memory_usage, track_gpu_memory_usage
-from model.multimodal_encoder.rqvaesigliptransformer_encoder import RQVAESIGLIPTransformerVisionTower
+from vlac.gpu_memory_utils import print_gpu_memory_usage, track_gpu_memory_usage
+from vlac.model.multimodal_encoder.rqvaesigliptransformer_encoder import RQVAESIGLIPTransformerVisionTower
 
 
 def load_lm(device):
