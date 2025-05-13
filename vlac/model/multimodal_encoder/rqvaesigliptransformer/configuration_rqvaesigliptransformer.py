@@ -10,7 +10,7 @@ class RQVAESIGLIPTransformerConfig(PretrainedConfig):
         rqtransformer=None,
         hidden_size=None,
         architectures=None,
-        **kwargs,
+        **_,
     ):
         super().__init__()
 

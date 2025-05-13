@@ -160,7 +160,7 @@ class AttnBlock(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, *, ch, out_ch, ch_mult=(1, 2, 4, 8), num_res_blocks,
                  attn_resolutions, dropout=0.0, resamp_with_conv=True, in_channels,
-                 resolution, z_channels, give_pre_end=False, **kwargs):
+                 resolution, z_channels, give_pre_end=False, **_):
         super().__init__()
         self.last_z_shape = None
         self.ch = ch

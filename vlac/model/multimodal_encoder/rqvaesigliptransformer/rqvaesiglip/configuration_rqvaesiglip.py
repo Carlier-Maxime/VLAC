@@ -18,7 +18,7 @@ class RQVAESiglipConfig(PretrainedConfig):
         architectures=None,
         decoder_latent_shape=None,
         pretrained_model="google/siglip-large-patch16-256",
-        **kwargs,
+        **_,
     ):
         super().__init__()
         

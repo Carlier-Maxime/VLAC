@@ -30,7 +30,7 @@ class RQTransformerConfig(PretrainedConfig):
             vocab_size=None,
             head=None,
             architectures=None,
-            **kwargs,
+            **_,
     ):
         super().__init__()
 
