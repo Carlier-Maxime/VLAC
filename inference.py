@@ -1,9 +1,12 @@
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from gpu_memory_utils import print_gpu_memory_usage, track_gpu_memory_usage
+from model.multimodal_encoder.rqvaesigliptransformer_encoder import RQVAESIGLIPTransformerVisionTower
 
-def setup_model(device="cuda"):
-    model_name = "meta-llama/Llama-3.2-1B"
+
+def load_lm(device):
+    model_name = "meta-llama/Llama-3.2-3B"
     tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
@@ -33,8 +36,22 @@ def generate_response(model, tokenizer, prompt, max_length=512):
     return response
 
 
+def load_vision_tower(path, device):
+    """Wrapper function to load the vision tower model"""
+    return RQVAESIGLIPTransformerVisionTower(path).to(device)
+
+
 def main():
-    model, tokenizer = setup_model()
+    device = "cuda"
+
+    # Print initial GPU memory usage
+    print("\n=== Loading Model =============")
+    print_gpu_memory_usage(device, "Initial")
+    vision_tower = track_gpu_memory_usage(load_vision_tower, "./vila-u-7b-256/vision_tower", device)
+    model, tokenizer = track_gpu_memory_usage(load_lm, device)
+    print_gpu_memory_usage(device, "Final")
+    print("===============================\n")
+
     prompt = """You are a PNJ in a video game. Player talk you : "Can you give me a creative stuff ?". """
     response = generate_response(model, tokenizer, prompt)
     print("Generated response:", response)
