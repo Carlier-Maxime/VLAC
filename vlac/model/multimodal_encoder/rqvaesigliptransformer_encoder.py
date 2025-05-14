@@ -9,7 +9,9 @@ class RQVAESIGLIPTransformerVisionTower(nn.Module):
     def __init__(self, model_name_or_path, config=None):
         super().__init__()
         self.config = RQVAESIGLIPTransformerConfig.from_pretrained(model_name_or_path) if config is None else config
-        self.vision_tower = RQVAESIGLIPTransformer.from_pretrained(model_name_or_path, config=self.config)
+        self.base_model = RQVAESIGLIPTransformer.from_pretrained(model_name_or_path, config=self.config)
+        self.rqvaesiglip = self.base_model.rqvaesiglip.to(torch.bfloat16)
+        self.rqtransformer = self.base_model.rqtransformer
         self.is_loaded = True
 
         def select_value_by_hidden_size(value_for_1152, value_for_1024):
@@ -25,11 +27,14 @@ class RQVAESIGLIPTransformerVisionTower(nn.Module):
         self.image_tokens = select_value_by_hidden_size(729, 256)
 
     def forward(self, images, text_vocab_size):
-        output = self.vision_tower.rqvaesiglip.encode_image(images)
-        image_features, tokens = output[-1], output[-2]
+        tokens, image_features,  = self.rqvaesiglip.encode_image(images)
 
         bs, patch_size, _, dim = image_features.shape
         image_features = torch.reshape(image_features, [bs, patch_size ** 2, dim])
         tokens = torch.add(torch.reshape(tokens, [bs, patch_size ** 2, -1]), text_vocab_size)
 
         return image_features, tokens
+
+    @property
+    def device(self):
+        return next(self.base_model.parameters()).device

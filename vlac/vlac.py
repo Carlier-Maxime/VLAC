@@ -49,7 +49,7 @@ class VLAC(PreTrainedModel):
     def load_vision_tower(self):
         config = RQVAESIGLIPTransformerConfig.from_pretrained(self.config.vision_tower_type)
         config.device_map = self.device_map
-        self.vision_tower = RQVAESIGLIPTransformerVisionTower(self.config.vision_tower_type, config).to(list(self.device_map.values())[0])
+        self.vision_tower = RQVAESIGLIPTransformerVisionTower(self.config.vision_tower_type, config).to(self.device_map["vision_tower"])
 
     def load_llm(self):
         self.text_tokenizer = AutoTokenizer.from_pretrained(self.config.llm_type, trust_remote_code=True)
@@ -57,12 +57,15 @@ class VLAC(PreTrainedModel):
             self.config.llm_type,
             torch_dtype=torch.float16,
             trust_remote_code=True,
-            device_map=self.device_map
+            device_map=self.device_map["llm"]
         )
 
-    def forward(self, prompt, max_length=512, **_):
+    def forward(self, prompt, vision, max_length=512, **_):
         inputs = self.text_tokenizer(prompt, return_tensors="pt")
         inputs = {k: v.to(self.llm.device) for k, v in inputs.items()}
+        vision_processed = self.vision_tower.image_processor(vision, return_tensors="pt")["pixel_values"].to(self.vision_tower.device).to(torch.bfloat16)
+        img_tokens, img_features = self.vision_tower.rqvaesiglip.encode_image(vision_processed)
+        out_vision = self.vision_tower.rqvaesiglip.decode(img_features).to(torch.float32).add_(1).mul_(127.5).clamp_(0, 255).chunk(2)[0]
         with torch.no_grad():
             outputs = self.llm.generate(
                 **inputs,
@@ -76,7 +79,7 @@ class VLAC(PreTrainedModel):
                 num_beams=2
             )
         response = self.text_tokenizer.decode(outputs[0], skip_special_tokens=True)
-        return response
+        return response, out_vision
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path: str, *args, **kwargs) -> "PreTrainedModel":
