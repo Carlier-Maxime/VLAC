@@ -62,7 +62,7 @@ class VLAC(PreTrainedModel):
     def load_projector(self):
         config = MultimodalProjectorConfig.from_pretrained(self.config.mm_projector_type)
         config.device_map = self.device_map
-        self.mm_projector = MultimodalProjector(config, self.config).to(self.device_map["mm_projector"])
+        self.mm_projector = MultimodalProjector(config, self.config).to(self.device_map["mm_projector"]).to(torch.bfloat16)
 
     def load_llm(self):
         self.text_tokenizer = AutoTokenizer.from_pretrained(self.config.llm_type, trust_remote_code=True)
@@ -88,7 +88,7 @@ class VLAC(PreTrainedModel):
         ], dim=0)
         attention_mask = input_ids.ne(0)
         vision_preprocessed = self.vision_tower.image_processor(vision, return_tensors="pt")["pixel_values"].to(self.vision_tower.device).to(torch.bfloat16)
-        #  _, _, attention_mask, _, input_embeds, _ = self.prepare_embeds_for_multimodal(input_ids, None, attention_mask, None, None, vision_preprocessed)
+        _, _, attention_mask, _, input_embeds, _ = self.prepare_embeds_for_multimodal(input_ids, None, attention_mask, None, None, vision_preprocessed)
 
         img_tokens, img_features = self.vision_tower.rqvaesiglip.encode_image(vision_preprocessed)
         out_vision = self.vision_tower.rqvaesiglip.decode(img_features).to(torch.float32).add_(1).mul_(127.5).clamp_(0, 255).chunk(2)[0]
@@ -153,8 +153,7 @@ class VLAC(PreTrainedModel):
         elif images.ndim == 5:
             images = images.flatten(0, 1)
 
-        input_image_ids = input_ids[input_ids == IMAGE_TOKEN_INDEX]
-        image_features, tokens = self.encode_images(images, input_image_ids)
+        image_features, tokens = self.encode_images(images)
 
         _labels = labels
         _position_ids = position_ids
@@ -348,6 +347,17 @@ class VLAC(PreTrainedModel):
             new_input_embeds,
             new_labels,
         )
+
+    def encode_images(self, images):
+        if isinstance(self.vision_tower, RQVAESIGLIPTransformerVisionTower):
+            self.vision_tower.rqvaesiglip.eval()
+        else:
+            raise NotImplementedError()
+
+        image_features, tokens = self.vision_tower(images, self.llm.vocab_size)
+        image_features = self.mm_projector(image_features)
+
+        return image_features, tokens
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path: str, *args, **kwargs) -> "PreTrainedModel":

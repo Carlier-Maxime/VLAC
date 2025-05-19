@@ -1,5 +1,5 @@
 {
-  "llm_type": "meta-llama/Llama-3.2-1B",
+  "llm_type": "openlm-research/open_llama_7b",
   "vision_tower_type": "./vila-u-7b-256/vision_tower",
   "mm_projector_type": "./vila-u-7b-256/mm_projector",
   "mm_hidden_size": 1024,
