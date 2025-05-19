@@ -1,14 +1,15 @@
 import warnings
+from typing import Dict
 
-from transformers import PreTrainedModel, PretrainedConfig, AutoTokenizer, AutoModelForCausalLM
 import torch
 import torch.nn.functional as F
+from transformers import PreTrainedModel, PretrainedConfig, AutoTokenizer, AutoModelForCausalLM
 
 from vlac.constants import IMAGE_TOKEN_INDEX, IGNORE_INDEX
-from vlac.model.multimodal_projector.base_projector import MultimodalProjectorConfig, MultimodalProjector
-from vlac.utils.gpu_memory_utils import print_gpu_memory_usage, track_gpu_memory_usage
 from vlac.model.multimodal_encoder.rqvaesigliptransformer import RQVAESIGLIPTransformerConfig
 from vlac.model.multimodal_encoder.rqvaesigliptransformer_encoder import RQVAESIGLIPTransformerVisionTower
+from vlac.model.multimodal_projector.base_projector import MultimodalProjectorConfig, MultimodalProjector
+from vlac.utils.gpu_memory_utils import track_gpu_memory_usage, print_gpus_memory_usage
 from vlac.utils.tokenizer import tokenize_conversation
 
 
@@ -40,14 +41,14 @@ class VLAC(PreTrainedModel):
         self.llm = None
         self.vision_tower = None
         self.mm_projector = None
-        self.device_map = config.device_map
+        self.device_map: Dict = config.device_map
         if config.verbose:
             print("\n=== Loading Model =============")
-            print_gpu_memory_usage(self.device_map, "Initial")
-            track_gpu_memory_usage(self.load_vision_tower)
-            track_gpu_memory_usage(self.load_projector)
-            track_gpu_memory_usage(self.load_llm)
-            print_gpu_memory_usage(self.device_map, "Final")
+            print_gpus_memory_usage("Initial")
+            track_gpu_memory_usage(self.load_vision_tower, self.device_map["vision_tower"])
+            track_gpu_memory_usage(self.load_projector, self.device_map["mm_projector"])
+            track_gpu_memory_usage(self.load_llm, self.device_map["llm"])
+            print_gpus_memory_usage("Final")
             print("===============================\n")
         else:
             self.load_vision_tower()
