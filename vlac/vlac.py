@@ -5,6 +5,7 @@ import torch
 import torch.nn.functional as F
 
 from vlac.constants import IMAGE_TOKEN_INDEX, IGNORE_INDEX
+from vlac.model.multimodal_projector.base_projector import MultimodalProjectorConfig, MultimodalProjector
 from vlac.utils.gpu_memory_utils import print_gpu_memory_usage, track_gpu_memory_usage
 from vlac.model.multimodal_encoder.rqvaesigliptransformer import RQVAESIGLIPTransformerConfig
 from vlac.model.multimodal_encoder.rqvaesigliptransformer_encoder import RQVAESIGLIPTransformerVisionTower
@@ -44,17 +45,24 @@ class VLAC(PreTrainedModel):
             print("\n=== Loading Model =============")
             print_gpu_memory_usage(self.device_map, "Initial")
             track_gpu_memory_usage(self.load_vision_tower)
+            track_gpu_memory_usage(self.load_projector)
             track_gpu_memory_usage(self.load_llm)
             print_gpu_memory_usage(self.device_map, "Final")
             print("===============================\n")
         else:
             self.load_vision_tower()
+            self.load_projector()
             self.load_llm()
 
     def load_vision_tower(self):
         config = RQVAESIGLIPTransformerConfig.from_pretrained(self.config.vision_tower_type)
         config.device_map = self.device_map
         self.vision_tower = RQVAESIGLIPTransformerVisionTower(self.config.vision_tower_type, config).to(self.device_map["vision_tower"])
+
+    def load_projector(self):
+        config = MultimodalProjectorConfig.from_pretrained(self.config.mm_projector_type)
+        config.device_map = self.device_map
+        self.mm_projector = MultimodalProjector(config, self.config).to(self.device_map["mm_projector"])
 
     def load_llm(self):
         self.text_tokenizer = AutoTokenizer.from_pretrained(self.config.llm_type, trust_remote_code=True)

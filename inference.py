@@ -5,8 +5,10 @@ from vlac import VLAC, VLACConfig
 
 
 def main():
-    device_map = {"vision_tower": "cuda:1", "llm": "cuda:0"}
-    vlac = VLAC(VLACConfig("meta-llama/Llama-3.2-1B", "./vila-u-7b-256/vision_tower", "", True, device_map=device_map))
+    device_map = {"vision_tower": "cuda:1", "mm_projector": "cuda:0", "llm": "cuda:0"}
+    config = VLACConfig.from_json_file("./config.json")
+    config.device_map = device_map
+    vlac = VLAC(config)
 
     prompt = """You are a PNJ in a video game. Player talk you : "Can you give me a creative stuff ?". """
     img = Image.open("/media/hdd/datasets/imagenet/val/n02119022/ILSVRC2012_val_00035165.JPEG")
