@@ -134,11 +134,11 @@ class RQTransformer(PreTrainedModel):
         depth_ctx_full = depth_ctx_full + self.pos_emb_d[:, :generate_idx, :]
 
         head_outputs = self.head_transformer(depth_ctx_full)
-        head_outputs = head_outputs.reshape(B, -1)
+        head_outputs = head_outputs.reshape(B*seq_len, -1)
 
         logits = self.classifier_mlp(head_outputs)
-
-        logits = logits[B // 2:, :] + cfg * (logits[:B // 2, :] - logits[B // 2:, :])
+        half = logits.shape[0] // 2
+        logits = logits[half:, :] + cfg * (logits[:half, :] - logits[half:, :])
         code = sample_from_logits(logits, temperature=1.0, top_p=0.96, top_k=900)
         code = code.reshape(B // 2, seq_len, 1).repeat(2, 1, self.pos_emb_d.shape[1])
 
@@ -148,7 +148,7 @@ class RQTransformer(PreTrainedModel):
             depth_ctx = torch.cumsum(depth_ctx, dim=-2)[:, :, :i + 1, :]
             if len(depth_ctx.shape) == 3:
                 depth_ctx = depth_ctx.unsqueeze(2)
-            depth_ctx = self.in_mlp_1(depth_ctx)
+            depth_ctx = self.in_mlp_1(depth_ctx.float())
 
             depth_ctx_full = torch.cat(
                 [
@@ -165,8 +165,8 @@ class RQTransformer(PreTrainedModel):
             head_outputs = head_outputs[:, -1, :]
 
             logits = self.classifier_mlp(head_outputs)
-
-            logits = logits[B // 2:, :] + cfg * (logits[:B // 2, :] - logits[B // 2:, :])
+            half = logits.shape[0] // 2
+            logits = logits[half:, :] + cfg * (logits[:half, :] - logits[half:, :])
             code_generate = sample_from_logits(logits, temperature=1.0, top_p=0.96, top_k=900)
             code_generate = code_generate.reshape(B // 2, seq_len).repeat(2, 1)
             code[:, :, i + 1] = code_generate
