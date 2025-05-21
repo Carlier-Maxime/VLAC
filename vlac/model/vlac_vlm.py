@@ -27,7 +27,7 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
     def __init__(self, config):
         super().__init__(config)
         self.config = config
-        self.vlac = self.config.vlac
+        object.__setattr__(self, 'vlac', self.config.vlac)
         self.lm_head = self.vlac.llm.lm_head
         self.llm = self.vlac.llm
         self.config.is_decoder = True
