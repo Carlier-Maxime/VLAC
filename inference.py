@@ -6,7 +6,7 @@ from vlac import VLAC, VLACConfig
 
 def main():
     device_map = {"vision_tower": "cuda:1", "mm_projector": "cuda:1", "llm": "cuda:1"}
-    config = VLACConfig.from_json_file("./config.json")
+    config = VLACConfig.from_json_file("configs/config.json")
     config.device_map = device_map
     vlac = VLAC(config)
 
