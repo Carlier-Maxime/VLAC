@@ -8,7 +8,6 @@ export bs=$((BATCH_SIZE / ACC_STEP))
 
 torchrun --nproc_per_node=1 --master_port=25001 \
     -m vlac.train.train \
-    --deepspeed ./configs/deepspeed.json \
     --version v1 \
     --data_mixture sharegpt4v_pretrain+mmc4core+openvid_generation \
     --chunk_sampler True \

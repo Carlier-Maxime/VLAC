@@ -1,8 +1,6 @@
-import warnings
 from typing import Dict
 
 import torch
-import torch.nn.functional as F
 from transformers import PreTrainedModel, PretrainedConfig, AutoTokenizer, AutoModelForCausalLM
 
 from vlac.model.multimodal_encoder.rqvaesigliptransformer import RQVAESIGLIPTransformerConfig
@@ -10,7 +8,6 @@ from vlac.model.multimodal_encoder.rqvaesigliptransformer_encoder import RQVAESI
 from vlac.model.multimodal_projector.base_projector import MultimodalProjectorConfig, MultimodalProjector
 from vlac.model.vlac_vlm import VLACForCausalLM, VLACVLMConfig
 from vlac.utils.gpu_memory_utils import track_gpu_memory_usage, print_gpus_memory_usage
-from vlac.utils.tokenizer import tokenize_conversation
 
 
 class VLACConfig(PretrainedConfig):
@@ -18,9 +15,9 @@ class VLACConfig(PretrainedConfig):
 
     def __init__(
             self,
-            llm_type: str,
-            vision_tower_type: str,
-            mm_projector_type: str,
+            llm_type: str = 'meta-llama/Llama-2-7b',
+            vision_tower_type: str = './vila-u-7b-256/vision_tower',
+            mm_projector_type: str = './vila-u-7b-256/mm_projector',
             verbose: bool = False,
             **kwargs
     ):
