@@ -137,10 +137,8 @@ class RQTransformer(PreTrainedModel):
         head_outputs = head_outputs.reshape(B*seq_len, -1)
 
         logits = self.classifier_mlp(head_outputs)
-        half = logits.shape[0] // 2
-        logits = logits[half:, :] + cfg * (logits[:half, :] - logits[half:, :])
         code = sample_from_logits(logits, temperature=1.0, top_p=0.96, top_k=900)
-        code = code.reshape(B // 2, seq_len, 1).repeat(2, 1, self.pos_emb_d.shape[1])
+        code = code.reshape(B, seq_len, 1).repeat(1, 1, self.pos_emb_d.shape[1])
 
         for i in range(self.pos_emb_d.shape[1] - 1):
             generate_idx += 1
@@ -165,10 +163,8 @@ class RQTransformer(PreTrainedModel):
             head_outputs = head_outputs[:, -1, :]
 
             logits = self.classifier_mlp(head_outputs)
-            half = logits.shape[0] // 2
-            logits = logits[half:, :] + cfg * (logits[:half, :] - logits[half:, :])
             code_generate = sample_from_logits(logits, temperature=1.0, top_p=0.96, top_k=900)
-            code_generate = code_generate.reshape(B // 2, seq_len).repeat(2, 1)
+            code_generate = code_generate.reshape(B, seq_len)
             code[:, :, i + 1] = code_generate
 
         out_features = self.embed_with_model_aux(code, model_aux)

@@ -80,7 +80,7 @@ class VLAC(PreTrainedModel):
         inputs = self.text_tokenizer(prompt, return_tensors="pt")
         inputs = {k: v.to(self.llm.device) for k, v in inputs.items()}
 
-        input_ids = [
+        """input_ids = [
             tokenize_conversation(conversation, self.text_tokenizer, add_generation_prompt=True, image_generation=True).to(self.llm.device).repeat(generation_nums, 1)
             for conversation in [[{"from": "human", "value": prompt}], [{"from": "human", "value": " "}]]
         ]
@@ -89,9 +89,10 @@ class VLAC(PreTrainedModel):
             F.pad(input_ids_part, (max_length - input_ids_part.shape[1], 0))
             for input_ids_part in input_ids
         ], dim=0)
-        attention_mask = input_ids.ne(0)
+        attention_mask = inputs.ne(0)"""
+
         vision_preprocessed = self.vision_tower.image_processor(vision, return_tensors="pt")["pixel_values"].to(self.vision_tower.device).to(torch.bfloat16)
-        _, _, attention_mask, _, inputs_embeds, _ = self.vlm.prepare_embeds_for_multimodal(input_ids, None, attention_mask, None, None, vision_preprocessed)
+        _, _, attention_mask, _, inputs_embeds, _ = self.vlm.prepare_embeds_for_multimodal(inputs["input_ids"], None, inputs["attention_mask"], None, None, vision_preprocessed)
         outputs = self.vlm.generate(inputs_embeds=inputs_embeds, attention_mask=attention_mask, max_length=max_len, cfg=cfg)
         response = self.text_tokenizer.decode(outputs.flatten(), skip_special_tokens=True).strip()
         print(response)
@@ -123,6 +124,12 @@ class VLAC(PreTrainedModel):
         image_features = self.mm_projector(image_features)
 
         return image_features, tokens
+
+    def decode_images(self, image_ids, input_ids):
+        image_embeds = self.vision_tower.rqtransformer.embed_with_model_aux(image_ids, self.vision_tower.rqvaesiglip)
+        image_embeds = torch.cumsum(image_embeds, dim=-2)[:, :, -1, :]
+        image_embeds = image_embeds.reshape(input_ids.shape[0], int(self.vision_tower.image_tokens ** 0.5), int(self.vision_tower.image_tokens ** 0.5), -1)
+        return self.vision_tower.rqvaesiglip.decode(image_embeds).to(torch.float32).add_(1).mul_(127.5).clamp_(0, 255)
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path: str, *args, **kwargs) -> "PreTrainedModel":
