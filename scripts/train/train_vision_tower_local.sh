@@ -2,9 +2,10 @@ export NCCL_IB_SL=1
 export CUDA_DEVICE_MAX_CONNECTIONS=1
 export TORCH_NCCL_ASYNC_ERROR_HANDLING=1
 
-export BATCH_SIZE=1
+export BATCH_SIZE=4
 export ACC_STEP=1
 export bs=$((BATCH_SIZE / ACC_STEP))
+export TOKENIZERS_PARALLELISM="true"
 
 torchrun --nproc_per_node=1 --master_port=25001 \
     -m vlac.train.train \
