@@ -1,53 +1,53 @@
+import glob
 from typing import cast, Tuple
 
-from torch.utils.data import Dataset
-from torch.utils.data.dataset import _T_co
-from transformers import HfArgumentParser, CLIPProcessor, CLIPImageProcessor
-import PIL.Image as Image
+import webdataset as wds
+import torch
+from torch.utils.data import IterableDataset
+from torch.nn.utils.rnn import pad_sequence
+from transformers import HfArgumentParser
 
 from vlac import VLACConfig, VLAC
 from vlac.train.args import ModelArguments, DataArguments, TrainingArguments
 from vlac.train.trainer import VLACTrainer
 
 
-dataset = {
-    "img": [
-        "/media/hdd/datasets/imagenet/train/n01440764/n01440764_261.JPEG",
-        "/media/hdd/datasets/imagenet/train/n01917289/n01917289_220.JPEG",
-        "/media/hdd/datasets/imagenet/train/n02321529/n02321529_1660.JPEG",
-        "/media/hdd/datasets/imagenet/train/n02776631/n02776631_4304.JPEG"
-    ],
-    "text": [
-        "A fish zeiofhereorahgraeiogbureamfjruioreagbuireavhuiirhvuoaergvuoraehvouihgaoiahoirrvhaoirjvioarhgioahrioghoivhoiarehviorhvoireahvaphgoi",
-        "A coral zeiofhereorahgraeiogbureamfjruioreagbuireavhuiirhvuoaergvuoraehvouihgaoiahoirrvhaoirjvioarhgioahrioghoivhoiarehviorhvoireahvaphgoi",
-        "A worm zeiofhereorahgraeiogbureamfjruioreagbuireavhuiirhvuoaergvuoraehvouihgaoiahoirrvhaoirjvioarhgioahrioghoivhoiarehviorhvoireahvaphgoi",
-        "A sandwich zeiofhereorahgraeiogbureamfjruioreagbuireavhuiirhvuoaergvuoraehvouihgaoiahoirrvhaoirjvioarhgioahrioghoivhoiarehviorhvoireahvaphgoi"
-    ]
-}
+class COYOWebDatasetIterable(IterableDataset):
+    def __init__(self, tars_path_pattern, length: int, img_preprocess, tokenizer, shuffle: int = 100):
+        self.length = length
+        self.img_preprocess = img_preprocess
+        self.tokenizer = tokenizer
+        self.dataset = wds.DataPipeline(
+            wds.SimpleShardList(sorted(glob.glob(tars_path_pattern))),
+            wds.shuffle(shuffle),
+            wds.split_by_worker,
+            wds.tarfile_to_samples(),
+            wds.decode("pil"),
+            wds.to_tuple("png", "text"),
+            wds.map(self.preprocess),
+        ).with_length(self.length)
 
+    def preprocess(self, x):
+        img, txt = x
+        img = self.img_preprocess(img, return_tensors="pt")["pixel_values"][0]
+        text_tokens = self.tokenizer(txt, return_tensors="pt")["input_ids"][0]
+        return img, text_tokens
 
-class MyDataset(Dataset):
-    def __init__(self, img_paths, texts):
-        self.img_paths = img_paths
-        self.texts = texts
-
-    def __getitem__(self, index) -> _T_co:
-        img_path = self.img_paths[index]
-        text = self.texts[index]
-        image = Image.open(img_path).convert("RGB")
-        return {
-            "vision": image,
-            "prompt": text
-        }
+    def __iter__(self):
+        for img, txt_tokens in self.dataset:
+            yield {
+                "vision": img,
+                "text_tokens": txt_tokens
+            }
 
     def __len__(self):
-        return len(self.img_paths)
+        return self.length
 
 
 def collate_fn(batch):
     return {
-        "prompt": [x["prompt"] for x in batch],
-        "vision": [x["vision"] for x in batch]
+        "text_tokens": pad_sequence([x["text_tokens"] for x in batch]).permute(1, 0),
+        "vision": torch.stack([x["vision"] for x in batch])
     }
 
 
@@ -63,8 +63,8 @@ def train():
         config = VLACConfig.from_json_file(model_args.config_file)
         vlac = VLAC(config)
     vlac.to("cuda")
-    # train_dataset = load_dataset("/media/hdd/datasets/coyo-700m", split="train[:100]")
-    train_dataset = MyDataset(dataset["img"], dataset["text"])
+    dataset = COYOWebDatasetIterable("/media/hdd/datasets/coyo-700m/tars/*.tar", 1024, vlac.vision_tower.image_processor, vlac.text_tokenizer)
+    train_dataset = dataset
 
     for param in vlac.llm.parameters():
         param.requires_grad = False

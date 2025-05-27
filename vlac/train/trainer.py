@@ -10,12 +10,11 @@ from transformers.modeling_utils import unwrap_model
 class VLACTrainer(Trainer):
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        prompt = inputs["prompt"]
+        text_tokens = inputs["text_tokens"]
         vision = inputs["vision"]
         model = model.module if hasattr(model, "module") else model
-        text_tokens = model.text_tokenizer(prompt,  return_tensors="pt")
-        input_ids = text_tokens["input_ids"].to(model.llm.device)
-        in_vision = model.vision_tower.image_processor(vision, return_tensors="pt")["pixel_values"].to(model.vision_tower.device).to(torch.bfloat16)
+        input_ids = text_tokens.to(model.llm.device)
+        in_vision = vision.to(model.vision_tower.device).to(torch.bfloat16)
         img_tokens, img_features = model.vision_tower.rqvaesiglip.encode_image(in_vision)
         out_vision = model.vision_tower.rqvaesiglip.decode(img_features).add_(1).mul_(127.5).clamp_(0, 255)
         reconstruction_loss = torch.nn.MSELoss()(in_vision, out_vision)
