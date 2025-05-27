@@ -45,7 +45,6 @@ class MyDataset(Dataset):
 
 
 def collate_fn(batch):
-    print(batch)
     return {
         "prompt": [x["prompt"] for x in batch],
         "vision": [x["vision"] for x in batch]
