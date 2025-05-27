@@ -63,7 +63,7 @@ def train():
         config = VLACConfig.from_json_file(model_args.config_file)
         vlac = VLAC(config)
     vlac.to("cuda")
-    dataset = COYOWebDatasetIterable("/media/hdd/datasets/coyo-700m/tars/*.tar", 1024, vlac.vision_tower.image_processor, vlac.text_tokenizer)
+    dataset = COYOWebDatasetIterable("/media/hdd/datasets/coyo-700m/tars/*.tar", 256, vlac.vision_tower.image_processor, vlac.text_tokenizer)
     train_dataset = dataset
 
     for param in vlac.llm.parameters():

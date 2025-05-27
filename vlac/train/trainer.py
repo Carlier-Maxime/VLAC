@@ -15,8 +15,7 @@ class VLACTrainer(Trainer):
         model = model.module if hasattr(model, "module") else model
         input_ids = text_tokens.to(model.llm.device)
         in_vision = vision.to(model.vision_tower.device).to(torch.bfloat16)
-        img_tokens, img_features = model.vision_tower.rqvaesiglip.encode_image(in_vision)
-        out_vision = model.vision_tower.rqvaesiglip.decode(img_features).add_(1).mul_(127.5).clamp_(0, 255)
+        out_vision, img_features, img_tokens = model.encode_decode_images(in_vision)
         reconstruction_loss = torch.nn.MSELoss()(in_vision, out_vision)
         img_features = model.mm_projector(img_features)
         text_embeds = model.llm.get_input_embeddings()(input_ids)
