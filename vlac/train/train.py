@@ -13,13 +13,12 @@ from vlac.train.trainer import VLACTrainer
 
 
 class COYOWebDatasetIterable(IterableDataset):
-    def __init__(self, tars_path_pattern, length: int, img_preprocess, tokenizer, shuffle: int = 100):
+    def __init__(self, tars_path_pattern, length: int, img_preprocess, tokenizer, shuffle: int = 0):
         self.length = length
         self.img_preprocess = img_preprocess
         self.tokenizer = tokenizer
         self.dataset = wds.DataPipeline(
             wds.SimpleShardList(sorted(glob.glob(tars_path_pattern))),
-            wds.shuffle(shuffle),
             wds.split_by_worker,
             wds.tarfile_to_samples(),
             wds.decode("pil"),
@@ -63,7 +62,7 @@ def train():
         config = VLACConfig.from_json_file(model_args.config_file)
         vlac = VLAC(config)
     vlac.to("cuda")
-    dataset = COYOWebDatasetIterable("/media/hdd/datasets/coyo-700m/tars/*.tar", 256, vlac.vision_tower.image_processor, vlac.text_tokenizer)
+    dataset = COYOWebDatasetIterable("/media/hdd/datasets/coyo-700m/tars/*.tar", 4096, vlac.vision_tower.image_processor, vlac.text_tokenizer)
     train_dataset = dataset
 
     for param in vlac.llm.parameters():
