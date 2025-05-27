@@ -17,7 +17,7 @@ class VLACTrainer(Trainer):
         input_ids = text_tokens["input_ids"].to(model.llm.device)
         in_vision = model.vision_tower.image_processor(vision, return_tensors="pt")["pixel_values"].to(model.vision_tower.device).to(torch.bfloat16)
         img_tokens, img_features = model.vision_tower.rqvaesiglip.encode_image(in_vision)
-        out_vision = model.vision_tower.rqvaesiglip.decode(img_features).to(torch.bfloat16).add_(1).mul_(127.5).clamp_(0, 255).chunk(2)[0]
+        out_vision = model.vision_tower.rqvaesiglip.decode(img_features).add_(1).mul_(127.5).clamp_(0, 255)
         reconstruction_loss = torch.nn.MSELoss()(in_vision, out_vision)
         img_features = model.mm_projector(img_features)
         text_embeds = model.llm.get_input_embeddings()(input_ids)
@@ -34,7 +34,6 @@ class VLACTrainer(Trainer):
             "out_vision": out_vision,
         }
         loss = (reconstruction_loss + contrastive_loss)
-        print(loss.dtype)
         return (loss, outputs) if return_outputs else loss
 
     def save_model(self, output_dir: Optional[str] = None, _internal_call: bool = False):

@@ -17,7 +17,12 @@ dataset = {
         "/media/hdd/datasets/imagenet/train/n02321529/n02321529_1660.JPEG",
         "/media/hdd/datasets/imagenet/train/n02776631/n02776631_4304.JPEG"
     ],
-    "text": ["A fish zeiofhereorahgraeiogbureamfjruioreagbuireavhuiirhvuoaergvuoraehvouihgaoiahoirrvhaoirjvioarhgioahrioghoivhoiarehviorhvoireahvaphgoi", "A coral zeiofhereorahgraeiogbureamfjruioreagbuireavhuiirhvuoaergvuoraehvouihgaoiahoirrvhaoirjvioarhgioahrioghoivhoiarehviorhvoireahvaphgoi", "A worm zeiofhereorahgraeiogbureamfjruioreagbuireavhuiirhvuoaergvuoraehvouihgaoiahoirrvhaoirjvioarhgioahrioghoivhoiarehviorhvoireahvaphgoi", "A sandwich zeiofhereorahgraeiogbureamfjruioreagbuireavhuiirhvuoaergvuoraehvouihgaoiahoirrvhaoirjvioarhgioahrioghoivhoiarehviorhvoireahvaphgoi"]
+    "text": [
+        "A fish zeiofhereorahgraeiogbureamfjruioreagbuireavhuiirhvuoaergvuoraehvouihgaoiahoirrvhaoirjvioarhgioahrioghoivhoiarehviorhvoireahvaphgoi",
+        "A coral zeiofhereorahgraeiogbureamfjruioreagbuireavhuiirhvuoaergvuoraehvouihgaoiahoirrvhaoirjvioarhgioahrioghoivhoiarehviorhvoireahvaphgoi",
+        "A worm zeiofhereorahgraeiogbureamfjruioreagbuireavhuiirhvuoaergvuoraehvouihgaoiahoirrvhaoirjvioarhgioahrioghoivhoiarehviorhvoireahvaphgoi",
+        "A sandwich zeiofhereorahgraeiogbureamfjruioreagbuireavhuiirhvuoaergvuoraehvouihgaoiahoirrvhaoirjvioarhgioahrioghoivhoiarehviorhvoireahvaphgoi"
+    ]
 }
 
 
@@ -42,8 +47,8 @@ class MyDataset(Dataset):
 def collate_fn(batch):
     print(batch)
     return {
-        "prompt": [x["prompt"] for x in batch],  # liste de textes
-        "vision": [x["vision"] for x in batch],  # tensor [B, C, H, W]
+        "prompt": [x["prompt"] for x in batch],
+        "vision": [x["vision"] for x in batch]
     }
 
 
