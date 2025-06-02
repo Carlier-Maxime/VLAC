@@ -35,8 +35,8 @@ class COYOWebDatasetIterable(IterableDataset):
     def __iter__(self):
         for img, txt_tokens in self.dataset:
             yield {
-                "vision": img,
-                "text_tokens": txt_tokens
+                "vision": img.contiguous(),
+                "text_tokens": txt_tokens.contiguous()
             }
 
     def __len__(self):
@@ -45,8 +45,8 @@ class COYOWebDatasetIterable(IterableDataset):
 
 def collate_fn(batch):
     return {
-        "text_tokens": pad_sequence([x["text_tokens"] for x in batch]).permute(1, 0),
-        "vision": torch.stack([x["vision"] for x in batch])
+        "text_tokens": pad_sequence([x["text_tokens"] for x in batch]).permute(1, 0).contiguous(),
+        "vision": torch.stack([x["vision"] for x in batch]).contiguous()
     }
 
 

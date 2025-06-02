@@ -7,7 +7,7 @@ export ACC_STEP=1
 export bs=$((BATCH_SIZE / ACC_STEP))
 export TOKENIZERS_PARALLELISM="true"
 
-torchrun --nproc_per_node=1 --master_port=25001 \
+torchrun --nproc_per_node=2 --master_port=25001 \
     -m vlac.train.train \
     --version v1 \
     --data_mixture sharegpt4v_pretrain+mmc4core+openvid_generation \
@@ -38,4 +38,5 @@ torchrun --nproc_per_node=1 --master_port=25001 \
     --model_max_length 2048 \
     --gradient_checkpointing False \
     --dataloader_num_workers 8 \
-    --lazy_preprocess True
+    --lazy_preprocess True \
+    --split_batches True
