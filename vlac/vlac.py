@@ -130,6 +130,7 @@ class VLAC(PreTrainedModel):
     def encode_decode_images(self, images):
         if isinstance(images, PIL.Image.Image):
             images = self.vision_tower.image_processor(images, return_tensors="pt")["pixel_values"].to(self.vision_tower.device).to(torch.bfloat16)
+        images.to(self.vision_tower.device).to(torch.bfloat16)
         img_tokens, img_features = self.vision_tower.rqvaesiglip.encode_image(images)
         out_vision = self.vision_tower.rqvaesiglip.decode(img_features)
         return out_vision, img_features, img_tokens

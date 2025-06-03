@@ -13,12 +13,10 @@ class VLACTrainer(Trainer):
         text_tokens = inputs["text_tokens"]
         vision = inputs["vision"]
         model = model.module if hasattr(model, "module") else model
-        input_ids = text_tokens.to(model.llm.device)
-        in_vision = vision.to(model.vision_tower.device).to(torch.bfloat16)
-        out_vision, img_features, img_tokens = model.encode_decode_images(in_vision)
-        reconstruction_loss = torch.nn.MSELoss()(in_vision, out_vision)
+        out_vision, img_features, img_tokens = model.encode_decode_images(vision)
+        reconstruction_loss = torch.nn.MSELoss()(vision, out_vision)
         img_features = model.mm_projector(img_features)
-        text_embeds = model.llm.get_input_embeddings()(input_ids)
+        text_embeds = model.llm.get_input_embeddings()(text_tokens.to(model.llm.device))
         loss_i, loss_t = self.info_nce_loss(text_tokens, img_tokens, text_embeds, img_features)
         contrastive_loss = (loss_i + loss_t) / 2
         outputs = {
