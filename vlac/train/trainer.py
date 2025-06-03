@@ -19,13 +19,7 @@ class VLACTrainer(Trainer):
         reconstruction_loss = torch.nn.MSELoss()(in_vision, out_vision)
         img_features = model.mm_projector(img_features)
         text_embeds = model.llm.get_input_embeddings()(input_ids)
-        N, H, W, C = img_tokens.shape
-        I_e = F.normalize(torch.einsum('bijk,bijkl->bl', img_tokens.to(torch.bfloat16), img_features.view(N, H, W, C, -1)).repeat(1, C), dim=1)
-        T_e = F.normalize(torch.einsum('bi,bij->bj', input_ids.to(torch.bfloat16), text_embeds), dim=1)
-        one = torch.tensor(1, dtype=torch.bfloat16, device=I_e.device)
-        logits = torch.matmul(I_e, T_e.T) * torch.exp(one)
-        loss_i = F.cross_entropy(logits, torch.arange(len(logits), device=logits.device))
-        loss_t = F.cross_entropy(logits.T, torch.arange(len(logits), device=logits.device))
+        loss_i, loss_t = self.info_nce_loss(text_tokens, img_tokens, text_embeds, img_features)
         contrastive_loss = (loss_i + loss_t) / 2
         outputs = {
             "text_tokens": text_tokens,
@@ -33,6 +27,17 @@ class VLACTrainer(Trainer):
         }
         loss = (reconstruction_loss + contrastive_loss)
         return (loss, outputs) if return_outputs else loss
+
+    @staticmethod
+    def info_nce_loss(text_tokens, image_tokens, text_embeds, img_features):
+        N, H, W, C = image_tokens.shape
+        I_e = F.normalize(torch.einsum('bijk,bijkl->bl', image_tokens.to(torch.bfloat16), img_features.view(N, H, W, C, -1)).repeat(1, C), dim=1)
+        T_e = F.normalize(torch.einsum('bi,bij->bj', text_tokens.to(torch.bfloat16), text_embeds), dim=1)
+        one = torch.tensor(1, dtype=torch.bfloat16, device=I_e.device)
+        logits = torch.matmul(I_e, T_e.T) * torch.exp(one)
+        loss_i = F.cross_entropy(logits, torch.arange(len(logits), device=logits.device))
+        loss_t = F.cross_entropy(logits.T, torch.arange(len(logits), device=logits.device))
+        return loss_i, loss_t
 
     def save_model(self, output_dir: Optional[str] = None, _internal_call: bool = False):
         output_dir = output_dir if output_dir is not None else self.args.output_dir
