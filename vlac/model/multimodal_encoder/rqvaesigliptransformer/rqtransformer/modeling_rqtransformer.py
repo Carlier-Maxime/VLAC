@@ -95,16 +95,6 @@ class RQTransformer(PreTrainedModel):
         ]))
 
     def embed_with_model_aux(self, code, model_aux):
-        H, W, D = model_aux.quantizer.code_shape
-        assert H == W
-        assert code.shape[-1] == D
-        if code.shape[1] != H:
-            if code.shape[1] != H * W:
-                raise NotImplementedError
-            if code.ndim > 2:
-                code = code.reshape(code.shape[0], H, W, D)
-            else:
-                code = code.reshape(H, W, D)
         return model_aux.get_code_emb_with_depth(code)
 
     def forward(self, embed_from_body, code, model_aux=None):

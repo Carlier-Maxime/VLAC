@@ -28,11 +28,7 @@ class RQVAESIGLIPTransformerVisionTower(nn.Module):
 
     def forward(self, images, text_vocab_size):
         tokens, image_features,  = self.rqvaesiglip.encode_image(images)
-
-        bs, patch_size, _, dim = image_features.shape
-        image_features = torch.reshape(image_features, [bs, patch_size ** 2, dim])
-        tokens = torch.reshape(tokens, [bs, patch_size ** 2, -1]).add_(text_vocab_size)
-
+        tokens.add_(text_vocab_size)
         return image_features, tokens
 
     def decode(self, img_tokens, text_vocab_size):
