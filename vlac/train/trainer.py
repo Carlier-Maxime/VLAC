@@ -11,11 +11,10 @@ class VLACTrainer(Trainer):
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         text_tokens = inputs["text_tokens"]
-        vision = inputs["vision"]
+        vision = inputs["vision"].to(torch.bfloat16)
         model = model.module if hasattr(model, "module") else model
         out_vision, img_features, img_tokens = model.encode_decode_images(vision)
         reconstruction_loss = torch.nn.MSELoss()(vision, out_vision)
-        img_features = model.mm_projector(img_features)
         text_embeds = model.llm.get_input_embeddings()(text_tokens.to(model.llm.device))
         loss_i, loss_t = self.info_nce_loss(text_tokens, img_tokens, text_embeds, img_features)
         contrastive_loss = (loss_i + loss_t) / 2
