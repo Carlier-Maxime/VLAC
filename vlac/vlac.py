@@ -17,7 +17,7 @@ class VLACConfig(PretrainedConfig):
     def __init__(
             self,
             llm_type: str = 'meta-llama/Llama-2-7b',
-            vision_tower_type: str = './vila-u-7b-256/vision_tower',
+            vision_tower_type: str | dict = './vila-u-7b-256/vision_tower',
             mm_projector_type: str = './vila-u-7b-256/mm_projector',
             verbose: bool = False,
             **kwargs
@@ -52,9 +52,13 @@ class VLAC(PreTrainedModel):
             self.__wrap_vlm()
 
     def __load_vision_tower(self):
-        config = RQVAESIGLIPTransformerConfig.from_pretrained(self.config.vision_tower_type)
+        is_pretrain = isinstance(self.config.vision_tower_type, str)
+        if is_pretrain:
+            config = RQVAESIGLIPTransformerConfig.from_pretrained(self.config.vision_tower_type)
+        else:
+            config = RQVAESIGLIPTransformerConfig.from_dict(self.config.vision_tower_type)
         config.device_map = self.device_map
-        self.vision_tower = RQVAESIGLIPTransformerVisionTower(self.config.vision_tower_type, config).to(self.device_map["vision_tower"])
+        self.vision_tower = RQVAESIGLIPTransformerVisionTower(self.config.vision_tower_type if is_pretrain else None, config).to(self.device_map["vision_tower"])
 
     def __load_projector(self):
         config = MultimodalProjectorConfig.from_pretrained(self.config.mm_projector_type)
@@ -73,11 +77,13 @@ class VLAC(PreTrainedModel):
     def __wrap_vlm(self):
         config = VLACVLMConfig(self)
         self.vlm = VLACForCausalLM(config)
+        self.llm.to(self.device_map["llm"])
 
     def forward(self, prompt, vision, max_len: int = 128, generation_nums: int = 1, cfg: float = 3, **_):
         inputs = self.text_tokenizer(prompt, return_tensors="pt")
         inputs = {k: v.to(self.llm.device) for k, v in inputs.items()}
-
+        input_ids = inputs["input_ids"]
+        attention_mask = inputs["attention_mask"]
         """input_ids = [
             tokenize_conversation(conversation, self.text_tokenizer, add_generation_prompt=True, image_generation=True).to(self.llm.device).repeat(generation_nums, 1)
             for conversation in [[{"from": "human", "value": prompt}], [{"from": "human", "value": " "}]]
@@ -89,8 +95,9 @@ class VLAC(PreTrainedModel):
         ], dim=0)
         attention_mask = inputs.ne(0)"""
 
-        _, _, attention_mask, _, inputs_embeds, _ = self.vlm.prepare_embeds_for_multimodal(inputs["input_ids"], None, inputs["attention_mask"], None, None, vision_preprocessed)
-        outputs = self.vlm.generate(inputs_embeds=inputs_embeds, attention_mask=attention_mask, max_length=max_len, cfg=cfg)
+        images = self.prepare_images(vision)
+        _, _, attention_mask, _, inputs_embeds, _ = self.vlm.prepare_embeds_for_multimodal(input_ids, None, attention_mask, None, None, images)
+        outputs = self.vlm.generate(inputs_embeds=inputs_embeds, attention_mask=attention_mask, max_new_tokens=self.vision_tower.image_tokens, cfg=cfg)
         response = self.text_tokenizer.decode(outputs.flatten(), skip_special_tokens=True).strip()
         print(response)
 
@@ -110,23 +117,36 @@ class VLAC(PreTrainedModel):
         response = self.text_tokenizer.decode(outputs[0], skip_special_tokens=True)
         return response, out_vision
 
-    def encode_images(self, images):
-        image_features, tokens = self.vision_tower(images, self.llm.vocab_size)
-        device = self.device_map["mm_projector"]
-        self.mm_projector.to(device)
-        image_features = self.mm_projector(image_features.to(device)).to(self.vision_tower.device)
-        return image_features, tokens
-
-    def decode_images(self, image_ids):
-        return self.vision_tower.decode(image_ids, self.llm.vocab_size)
-
-    def encode_decode_images(self, images):
+    def prepare_images(self, images):
         if isinstance(images, PIL.Image.Image):
             images = self.vision_tower.image_processor(images, return_tensors="pt")["pixel_values"]
-        images = images.to(self.vision_tower.device).to(torch.bfloat16)
+        return images.to(self.vision_tower.device).to(torch.bfloat16)
+
+    def project_img_features(self, features):
+        device = self.device_map["mm_projector"]
+        self.mm_projector.to(device)
+        embeds = self.mm_projector(features.to(device)).to(self.llm.device)
+        return embeds.reshape(embeds.shape[0], -1, embeds.shape[-1])
+
+    def unproject_img_features(self, embeds):
+        image_hidden_states, code = self.vision_tower.rqtransformer.generate(embeds.to(self.vision_tower.device), self.vision_tower.rqvaesiglip)
+        N, T, C = image_hidden_states.shape
+        sT = int(T**0.5)
+        image_hidden_states = image_hidden_states.reshape(N, sT, sT, C)
+        code = code.reshape(N, sT, sT, code.shape[-1])
+        return image_hidden_states, code
+
+    def encode_images(self, images):
+        images = self.prepare_images(images)
+        image_features, tokens = self.vision_tower(images, self.llm.vocab_size)
+        return image_features, tokens
+
+    def encode_decode_images(self, images):
         img_features, img_tokens = self.encode_images(images)
-        out_vision = self.decode_images(img_tokens)
-        return out_vision, img_features, img_tokens
+        img_embeds = self.project_img_features(img_features)
+        img_hidden_states, code = self.unproject_img_features(img_embeds)
+        out_vision = self.vision_tower.decode_features(img_hidden_states)
+        return out_vision, img_hidden_states, img_embeds, img_features, img_tokens
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path: str, *args, **kwargs) -> "PreTrainedModel":

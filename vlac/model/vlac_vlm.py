@@ -80,6 +80,8 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             images = images.flatten(0, 1)
 
         image_features, tokens = self.vlac.encode_images(images)
+        image_features = image_features.to(self.llm.device).flatten(1, -2)
+        tokens = tokens.to(self.llm.device)
 
         _labels = labels
         _position_ids = position_ids
@@ -312,7 +314,7 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
         hidden_states = outputs.last_hidden_state
         self.vlac.vision_tower.rqtransformer.eval()
         hidden_states = hidden_states.to(torch.float)
-        image_hidden_state, code = self.vlac.vision_tower.rqtransformer.generate(hidden_states, self.vlac.vision_tower.rqvaesiglip, cfg)
+        image_hidden_state, code = self.vlac.vision_tower.rqtransformer.generate(hidden_states.to(self.vlac.vision_tower.device), self.vlac.vision_tower.rqvaesiglip, cfg)
         image_hidden_state = self.vlac.mm_projector(image_hidden_state)
         hidden_states = image_hidden_state
         # image_ids.append(code)

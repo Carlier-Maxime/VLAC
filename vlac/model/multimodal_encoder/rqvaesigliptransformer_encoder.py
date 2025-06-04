@@ -6,10 +6,10 @@ from .rqvaesigliptransformer import RQVAESIGLIPTransformerConfig, RQVAESIGLIPTra
 
 
 class RQVAESIGLIPTransformerVisionTower(nn.Module):
-    def __init__(self, model_name_or_path, config=None):
+    def __init__(self, model_name_or_path=None, config=None):
         super().__init__()
         self.config = RQVAESIGLIPTransformerConfig.from_pretrained(model_name_or_path) if config is None else config
-        self.base_model = RQVAESIGLIPTransformer.from_pretrained(model_name_or_path, config=self.config)
+        self.base_model = RQVAESIGLIPTransformer.from_pretrained(model_name_or_path, config=self.config) if model_name_or_path is not None else RQVAESIGLIPTransformer(config=self.config)
         self.rqvaesiglip = self.base_model.rqvaesiglip.to(torch.bfloat16)
         self.rqtransformer = self.base_model.rqtransformer
         self.is_loaded = True
@@ -31,11 +31,14 @@ class RQVAESIGLIPTransformerVisionTower(nn.Module):
         tokens.add_(text_vocab_size)
         return image_features, tokens
 
-    def decode(self, img_tokens, text_vocab_size):
+    def decode_tokens(self, img_tokens, text_vocab_size):
         img_tokens.sub_(text_vocab_size)
-        img_embeds = self.rqtransformer.embed_with_model_aux(img_tokens, self.rqvaesiglip)
-        img_embeds = torch.cumsum(img_embeds, dim=-2)[:, :, :, -1, :]
-        return self.rqvaesiglip.decode(img_embeds)
+        img_embeds_vt = self.rqtransformer.embed_with_model_aux(img_tokens, self.rqvaesiglip)
+        img_embeds_vt = torch.cumsum(img_embeds_vt, dim=-2)[:, :, :, -1, :]
+        return self.decode_features(img_embeds_vt)
+
+    def decode_features(self, img_features):
+        return self.rqvaesiglip.decode(img_features)
 
     @property
     def device(self):

@@ -126,8 +126,7 @@ class RQTransformer(PreTrainedModel):
     def generate(self, embed_from_body, model_aux=None, cfg=3.0):
         generate_idx = 1
         B, seq_len, _ = embed_from_body.shape
-
-        embed_from_body = self.in_mlp_2(embed_from_body)
+        embed_from_body = self.in_mlp_2(embed_from_body.to(torch.float32))
 
         depth_ctx_full = embed_from_body.view(B, seq_len, 1, -1)
         depth_ctx_full = depth_ctx_full.reshape(B * seq_len, generate_idx, -1)
