@@ -111,28 +111,21 @@ class VLAC(PreTrainedModel):
         return response, out_vision
 
     def encode_images(self, images):
-        if isinstance(self.vision_tower, RQVAESIGLIPTransformerVisionTower):
-            self.vision_tower.rqvaesiglip.eval()
-        else:
-            raise NotImplementedError()
-
         image_features, tokens = self.vision_tower(images, self.llm.vocab_size)
-        image_features = self.mm_projector(image_features)
-
+        device = self.device_map["mm_projector"]
+        self.mm_projector.to(device)
+        image_features = self.mm_projector(image_features.to(device)).to(self.vision_tower.device)
         return image_features, tokens
 
-    def decode_images(self, image_ids, input_ids):
-        image_embeds = self.vision_tower.rqtransformer.embed_with_model_aux(image_ids, self.vision_tower.rqvaesiglip)
-        image_embeds = torch.cumsum(image_embeds, dim=-2)[:, :, -1, :]
-        image_embeds = image_embeds.reshape(input_ids.shape[0], int(self.vision_tower.image_tokens ** 0.5), int(self.vision_tower.image_tokens ** 0.5), -1)
-        return self.vision_tower.rqvaesiglip.decode(image_embeds)
+    def decode_images(self, image_ids):
+        return self.vision_tower.decode(image_ids, self.llm.vocab_size)
 
     def encode_decode_images(self, images):
         if isinstance(images, PIL.Image.Image):
             images = self.vision_tower.image_processor(images, return_tensors="pt")["pixel_values"].to(self.vision_tower.device).to(torch.bfloat16)
         images.to(self.vision_tower.device).to(torch.bfloat16)
-        img_tokens, img_features = self.vision_tower.rqvaesiglip.encode_image(images)
-        out_vision = self.vision_tower.rqvaesiglip.decode(img_features)
+        img_features, img_tokens = self.encode_images(images)
+        out_vision = self.decode_images(img_tokens)
         return out_vision, img_features, img_tokens
 
     @classmethod

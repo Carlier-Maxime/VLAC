@@ -31,9 +31,15 @@ class RQVAESIGLIPTransformerVisionTower(nn.Module):
 
         bs, patch_size, _, dim = image_features.shape
         image_features = torch.reshape(image_features, [bs, patch_size ** 2, dim])
-        tokens = torch.add(torch.reshape(tokens, [bs, patch_size ** 2, -1]), text_vocab_size)
+        tokens = torch.reshape(tokens, [bs, patch_size ** 2, -1]).add_(text_vocab_size)
 
         return image_features, tokens
+
+    def decode(self, img_tokens, text_vocab_size):
+        img_tokens.sub_(text_vocab_size)
+        img_embeds = self.rqtransformer.embed_with_model_aux(img_tokens, self.rqvaesiglip)
+        img_embeds = torch.cumsum(img_embeds, dim=-2)[:, :, :, -1, :]
+        return self.rqvaesiglip.decode(img_embeds)
 
     @property
     def device(self):
