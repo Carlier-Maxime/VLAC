@@ -52,14 +52,20 @@ def sample_from_logits(logits, temperature=1.0, top_k=None, top_p=None):
     """
 
     logits = logits.to(dtype=torch.float32)
-    logits = logits / temperature
 
+    # Temperature scaling (with epsilon guard)
+    eps = 1e-8
+    temperature = max(temperature, eps)
+    logits /= temperature
+
+    # Top-k filtering
     if top_k is not None:
         logits = top_k_logits(logits, top_k)
 
-    if torch.sum(torch.isnan(logits)):
-        print('WARNING... NaN observed')
-        logits[torch.isnan(logits)] = -float('Inf')
+    # Detect bad values in logits before softmax
+    if torch.isnan(logits).any() or torch.isinf(logits).any():
+        print("⚠️  WARNING: NaN or Inf in logits — replacing with -inf")
+        logits = torch.where(torch.isnan(logits) | torch.isinf(logits), torch.full_like(logits, -float('inf')), logits)
 
     probs = F.softmax(logits, dim=-1)
 
@@ -68,10 +74,24 @@ def sample_from_logits(logits, temperature=1.0, top_k=None, top_p=None):
 
     try:
         samples = torch.multinomial(probs, num_samples=1)
-    except:
-        raise RuntimeError
+    except RuntimeError as e:
+        print("❌ multinomial sampling failed. Dumping diagnostics:")
+        print_probs_info(probs)
+        raise RuntimeError("Sampling from logits failed") from e
 
     return samples.view(-1)
+
+
+def print_probs_info(probs):
+    print("probs.shape:", probs.shape)
+    print("probs.dtype:", probs.dtype)
+    print("probs.device:", probs.device)
+    print("isnan(probs):", probs.isnan().any())
+    print("isinf(probs):", probs.isinf().any())
+    print("min(probs):", probs.min().item())
+    print("max(probs):", probs.max().item())
+    print("sum(probs):", probs.sum(dim=-1))
+    print("probs:", probs)
 
 
 class RQTransformer(PreTrainedModel):
@@ -133,7 +153,7 @@ class RQTransformer(PreTrainedModel):
         depth_ctx_full = depth_ctx_full + self.pos_emb_d[:, :generate_idx, :]
 
         head_outputs = self.head_transformer(depth_ctx_full)
-        head_outputs = head_outputs.reshape(B*seq_len, -1)
+        head_outputs = head_outputs.reshape(B * seq_len, -1)
 
         logits = self.classifier_mlp(head_outputs)
         code = sample_from_logits(logits, temperature=1.0, top_p=0.96, top_k=900)
