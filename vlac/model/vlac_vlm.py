@@ -9,7 +9,7 @@ from vlac.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX
 
 
 class VLACVLMConfig(PretrainedConfig):
-    def __init__(self, vlac = None, **kwargs):
+    def __init__(self, vlac=None, **kwargs):
         super().__init__(**kwargs)
         self.vlac = vlac
         self.is_encoder_decoder = False
@@ -42,13 +42,8 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             labels,
             images,
     ):
-        if self.vlac.vision_tower is None or images is None or input_ids.shape[1] == 1:
-            if (
-                    past_key_values is not None
-                    and self.vlac.vision_tower is not None
-                    and images is not None
-                    and input_ids.shape[1] == 1
-            ):
+        if images is None or input_ids.shape[1] == 1:
+            if past_key_values is not None and images is not None and input_ids.shape[1] == 1:
                 target_shape = past_key_values[-1][-1].shape[-2] + 1
                 attention_mask = torch.cat(
                     (
@@ -80,17 +75,14 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             images = images.flatten(0, 1)
 
         image_features, tokens = self.vlac.encode_images(images)
-        image_features = image_features.to(self.llm.device).flatten(1, -2)
+        image_features = self.vlac.project_img_features(image_features).to(self.llm.device)
         tokens = tokens.to(self.llm.device)
 
         _labels = labels
         _position_ids = position_ids
         _attention_mask = attention_mask
 
-        if attention_mask is None:
-            attention_mask = torch.ones_like(input_ids, dtype=torch.bool)
-        else:
-            attention_mask = attention_mask.bool()
+        attention_mask = torch.ones_like(input_ids, dtype=torch.bool) if attention_mask is None else attention_mask.bool()
 
         if position_ids is None:
             position_ids = torch.arange(0, input_ids.shape[1], dtype=torch.long, device=input_ids.device)
@@ -100,7 +92,7 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
 
         input_ids_copy = input_ids.clone()
         input_ids_copy[input_ids_copy == IMAGE_TOKEN_INDEX] = 0
-        input_embeds = self.llm.model.embed_tokens(input_ids_copy)
+        input_embeds = self.vlac.text_embeds(input_ids_copy)
 
         input_ids = [
             cur_input_ids[cur_attention_mask] for cur_input_ids, cur_attention_mask in zip(input_ids, attention_mask)
