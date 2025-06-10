@@ -112,7 +112,7 @@ class VLAC(PreTrainedModel):
         return response, out_vision
 
     def make_multimodal_embeds(self, prompt, vision):
-        inputs = self.text_tokenizer(prompt, return_tensors="pt")
+        inputs = self.text_tokenizer(prompt, padding=True, return_tensors="pt")
         inputs = {k: v.to(self.llm.device) for k, v in inputs.items()}
         input_ids = inputs["input_ids"]
         attention_mask = inputs["attention_mask"]
@@ -121,7 +121,7 @@ class VLAC(PreTrainedModel):
         return inputs_embeds, attention_mask
 
     def prepare_images(self, images):
-        if isinstance(images, PIL.Image.Image):
+        if isinstance(images, PIL.Image.Image) or isinstance(images, list):
             images = self.vision_tower.image_processor(images, return_tensors="pt")["pixel_values"]
         return images.to(self.vision_tower.device).to(torch.bfloat16)
 
