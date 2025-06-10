@@ -1,11 +1,12 @@
 import warnings
+from io import UnsupportedOperation
 from typing import Optional, List
 
 import torch
 from transformers import PreTrainedModel, PretrainedConfig, AutoModelForCausalLM, GenerationMixin
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
-from vlac.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX
+from vlac.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
 
 class VLACVLMConfig(PretrainedConfig):
@@ -76,7 +77,7 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
 
         image_features, tokens = self.vlac.encode_images(images)
         image_features = self.vlac.project_img_features(image_features).to(self.llm.device)
-        tokens = tokens.to(self.llm.device)
+        tokens = tokens.to(self.llm.device).flatten(1, -2)
 
         _labels = labels
         _position_ids = position_ids
@@ -91,170 +92,60 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             labels = torch.full_like(input_ids, IGNORE_INDEX)
 
         input_ids_copy = input_ids.clone()
-        input_ids_copy[input_ids_copy == IMAGE_TOKEN_INDEX] = 0
+        img_token_mask = input_ids_copy == IMAGE_TOKEN_INDEX
+        input_ids_copy[img_token_mask] = 0
         input_embeds = self.vlac.text_embeds(input_ids_copy)
 
-        input_ids = [
-            cur_input_ids[cur_attention_mask] for cur_input_ids, cur_attention_mask in zip(input_ids, attention_mask)
-        ]
-        input_embeds_1 = [
-            cur_input_embeds[cur_attention_mask]
-            for cur_input_embeds, cur_attention_mask in zip(input_embeds, attention_mask)
-        ]
-        labels = [cur_labels[cur_attention_mask] for cur_labels, cur_attention_mask in zip(labels, attention_mask)]
+        B, N, D = input_embeds.shape
+        im_seq_len = image_features.shape[1]
 
-        new_input_embeds = []
-        new_labels = []
-        cur_image_idx = 0
+        IM_START_TOKEN_INDEX = self.vlac.text_tokenizer.convert_tokens_to_ids(DEFAULT_IM_START_TOKEN)
+        IM_END_TOKEN_INDEX = self.vlac.text_tokenizer.convert_tokens_to_ids(DEFAULT_IM_END_TOKEN)
+        wIMs = torch.where(input_ids_copy.eq(IM_START_TOKEN_INDEX))
+        wIMe = torch.where(input_ids_copy.eq(IM_END_TOKEN_INDEX))
+        assert len(wIMs[0]) == len(image_features) and wIMs[0].shape == wIMe[0].shape and wIMs[0].eq(wIMe[0]).all().item() and wIMs[1].add(1).eq(wIMe[1]).all().item()
+        im_per_batch = wIMs[0].unique(return_counts=True)[1]
+        del wIMs, wIMe
+        M = im_per_batch.max().item() * im_seq_len
+        W = N + M
 
-        for batch_idx, cur_input_ids in enumerate(input_ids):
-            cur_input_ids = input_ids[batch_idx]
-            num_images = (cur_input_ids == IMAGE_TOKEN_INDEX).sum()
-            if num_images == 0:
-                cur_image_features = image_features[0]
-                cur_input_embeds_1 = input_embeds_1[batch_idx]
-                cur_input_embeds = torch.cat([cur_input_embeds_1, cur_image_features[0:0]], dim=0)
-                new_input_embeds.append(cur_input_embeds)
-                new_labels.append(labels[batch_idx].unsqueeze(1).expand(-1, tokens.shape[-1]))
-                continue
+        if getattr(self.llm.config, "tokenizer_padding_side", "right") == "left":
+            raise UnsupportedOperation("Left padding is actually not supported")
 
-            cur_input_embeds = input_embeds_1[batch_idx]
-            image_token_indices = (
-                    [-1] + torch.where(cur_input_ids == IMAGE_TOKEN_INDEX)[0].tolist() + [cur_input_ids.shape[0]]
-            )
-            cur_labels = labels[batch_idx]
+        im_ids = torch.nonzero(input_ids_copy.eq(IM_END_TOKEN_INDEX))
+        counts = im_per_batch.mul(im_seq_len).unsqueeze(-1)
+        decals = torch.arange(0, counts.max(), im_seq_len, device=counts.device)[None].expand(B, -1)
+        decals = decals[decals < counts]
+        im_ids0 = im_ids[:, 0].unsqueeze(1).expand(-1, im_seq_len).flatten()
+        im_ids1 = im_ids[:, 1].add_(decals).unsqueeze(1).add(torch.arange(im_seq_len, device=im_ids.device)[None]).flatten()
+        im_mask = torch.zeros((B, W), dtype=torch.bool, device=decals.device)
+        im_mask[[im_ids0, im_ids1]] = True
 
-            cur_input_ids_noim = []
-            cur_labels_noim = []
-            cur_input_embeds_no_im = []
+        counts = im_mask.sum(dim=1).add_(N).unsqueeze(-1)
+        ids = torch.arange(W, device=counts.device)[None].expand(B, -1)
+        new_attention_mask = ids.lt(counts)
+        position_ids = torch.zeros((B, W), dtype=position_ids.dtype, device=position_ids.device)
+        position_ids[new_attention_mask] = ids[new_attention_mask]
+        text_mask = new_attention_mask & ~im_mask
+        new_attention_mask[text_mask] = attention_mask.flatten()
 
-            for i in range(len(image_token_indices) - 1):
-                cur_input_ids_noim.append(cur_input_ids[image_token_indices[i] + 1: image_token_indices[i + 1]])
-                cur_labels_noim.append(cur_labels[image_token_indices[i] + 1: image_token_indices[i + 1]])
-                cur_input_embeds_no_im.append(cur_input_embeds[image_token_indices[i] + 1: image_token_indices[i + 1]])
-
-            split_sizes = [x.shape[0] for x in cur_labels_noim]
-            cur_new_input_embeds = []
-            cur_new_labels = []
-
-            for i in range(num_images + 1):
-                cur_new_input_embeds.append(cur_input_embeds_no_im[i])
-                cur_new_labels.append(cur_labels_noim[i].unsqueeze(1).expand(-1, tokens.shape[-1]))
-                if i < num_images:
-                    cur_image_features = image_features[cur_image_idx]
-                    cur_tokens = tokens[cur_image_idx]
-                    cur_new_input_embeds.append(cur_image_features)
-                    if self.vlac.config.mm_use_vi_start_end:
-                        if (cur_input_ids[-3] == -200 and self.llm.vocab_size - 4 in cur_new_labels[-1]) \
-                                or all(x == -200 for x in cur_input_ids[-10:-3]):
-                            cur_new_labels.append(cur_tokens)
-                        else:
-                            cur_new_labels.append(
-                                torch.full(
-                                    (cur_image_features.shape[0], tokens.shape[-1]),
-                                    IGNORE_INDEX,
-                                    device=cur_labels.device,
-                                    dtype=cur_labels.dtype,
-                                )
-                            )
-                    else:
-                        if (cur_input_ids[-3] == -200 and self.llm.vocab_size - 2 in cur_new_labels[-1]):
-                            cur_new_labels.append(cur_tokens)
-                        else:
-                            cur_new_labels.append(
-                                torch.full(
-                                    (cur_image_features.shape[0], tokens.shape[-1]),
-                                    IGNORE_INDEX,
-                                    device=cur_labels.device,
-                                    dtype=cur_labels.dtype,
-                                )
-                            )
-                    cur_image_idx += 1
-
-            cur_new_input_embeds = torch.cat(cur_new_input_embeds)
-            cur_new_labels = torch.cat(cur_new_labels)
-
-            new_input_embeds.append(cur_new_input_embeds)
-            new_labels.append(cur_new_labels)
+        new_input_embeds = input_embeds.new_empty((B, W, D))
+        new_input_embeds[im_mask] = image_features.flatten(0, 1).to(input_embeds.dtype)
+        new_input_embeds[text_mask] = input_embeds.flatten(0, 1)
+        new_labels = labels.new_empty((B, W, tokens.shape[-1]))
+        new_labels[im_mask] = tokens.flatten(0, 1)
+        new_labels[text_mask] = labels.flatten().unsqueeze(-1).expand(-1, tokens.shape[-1])
 
         tokenizer_model_max_length = getattr(self.llm.config, "tokenizer_model_max_length", None)
-        if tokenizer_model_max_length is not None:
-            if any(len(x) > tokenizer_model_max_length for x in new_input_embeds):
-                warnings.warn("Inputs truncated!")
-            new_input_embeds = [x[:tokenizer_model_max_length] for x in new_input_embeds]
-            new_labels = [x[:tokenizer_model_max_length] for x in new_labels]
-
-        max_len = max(x.shape[0] for x in new_input_embeds)
-        batch_size = len(new_input_embeds)
-
-        new_input_embeds_padded = []
-        new_labels_padded = torch.full(
-            (batch_size, max_len, tokens.shape[-1]),
-            IGNORE_INDEX,
-            dtype=new_labels[0].dtype,
-            device=new_labels[0].device,
-        )
-        attention_mask = torch.zeros(
-            (batch_size, max_len),
-            dtype=attention_mask.dtype,
-            device=attention_mask.device,
-        )
-        position_ids = torch.zeros((batch_size, max_len), dtype=position_ids.dtype, device=position_ids.device)
-
-        for i, (cur_new_embed, cur_new_labels) in enumerate(zip(new_input_embeds, new_labels)):
-            cur_len = cur_new_embed.shape[0]
-            if getattr(self.llm.config, "tokenizer_padding_side", "right") == "left":
-                new_input_embeds_padded.append(
-                    torch.cat(
-                        (
-                            torch.zeros(
-                                (max_len - cur_len, cur_new_embed.shape[1]),
-                                dtype=cur_new_embed.dtype,
-                                device=cur_new_embed.device,
-                            ),
-                            cur_new_embed,
-                        ),
-                        dim=0,
-                    )
-                )
-                if cur_len > 0:
-                    new_labels_padded[i, -cur_len:] = cur_new_labels
-                    attention_mask[i, -cur_len:] = True
-                    position_ids[i, -cur_len:] = torch.arange(
-                        0, cur_len, dtype=position_ids.dtype, device=position_ids.device
-                    )
-            else:
-                new_input_embeds_padded.append(
-                    torch.cat(
-                        (
-                            cur_new_embed,
-                            torch.zeros(
-                                (max_len - cur_len, cur_new_embed.shape[1]),
-                                dtype=cur_new_embed.dtype,
-                                device=cur_new_embed.device,
-                            ),
-                        ),
-                        dim=0,
-                    )
-                )
-                if cur_len > 0:
-                    new_labels_padded[i, :cur_len] = cur_new_labels
-                    attention_mask[i, :cur_len] = True
-                    position_ids[i, :cur_len] = torch.arange(
-                        0, cur_len, dtype=position_ids.dtype, device=position_ids.device
-                    )
-
-        new_input_embeds = torch.stack(new_input_embeds_padded, dim=0)
+        if tokenizer_model_max_length is not None and W > tokenizer_model_max_length:
+            warnings.warn("Inputs truncated!")
+            new_input_embeds = new_input_embeds[:, :tokenizer_model_max_length]
+            new_labels = new_labels[:, :tokenizer_model_max_length]
 
         if _labels is None:
             new_labels = None
-        else:
-            new_labels = new_labels_padded
 
-        if _attention_mask is None:
-            attention_mask = None
-        else:
-            attention_mask = attention_mask.to(dtype=_attention_mask.dtype)
+        attention_mask = None if _attention_mask is None else new_attention_mask.to(dtype=_attention_mask.dtype)
 
         if _position_ids is None:
             position_ids = None
