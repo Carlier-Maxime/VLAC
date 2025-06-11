@@ -1,4 +1,5 @@
-from typing import Dict
+import os
+from typing import Dict, Union, Optional, Callable
 
 import torch
 import PIL.Image
@@ -153,3 +154,15 @@ class VLAC(PreTrainedModel):
         if config is None:
             config = VLACConfig.from_pretrained(pretrained_model_name_or_path)
         return super().from_pretrained(pretrained_model_name_or_path, config=config, *args, **kwargs)
+
+    def save_pretrained(self, save_directory: Union[str, os.PathLike], is_main_process: bool = True, state_dict: Optional[dict] = None, save_function: Callable = torch.save, push_to_hub: bool = False, max_shard_size: Union[int, str] = "5GB", safe_serialization: bool = True, variant: Optional[str] = None, token: Optional[Union[str, bool]] = None,
+                        save_peft_format: bool = True, **kwargs):
+        save_directory = save_directory if save_directory is not None else self.args.save_directory
+        os.makedirs(save_directory, exist_ok=True)
+
+        state_dict_path = os.path.join(save_directory, "pytorch_model.bin")
+        torch.save(self.state_dict(), state_dict_path)
+        self.config.save_pretrained(save_directory)
+        self.text_tokenizer.save_pretrained(save_directory)
+        print(f"VLAC saved in {save_directory}.")
+

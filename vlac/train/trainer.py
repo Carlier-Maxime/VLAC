@@ -1,11 +1,7 @@
-import os
-from typing import Optional
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from transformers import Trainer, PretrainedConfig
-from transformers.modeling_utils import unwrap_model
+from transformers import Trainer
 
 
 class VLACTrainer(Trainer):
@@ -37,23 +33,3 @@ class VLACTrainer(Trainer):
         loss_i = F.cross_entropy(logits, torch.arange(len(logits), device=logits.device))
         loss_t = F.cross_entropy(logits.T, torch.arange(len(logits), device=logits.device))
         return loss_i, loss_t
-
-    def save_model(self, output_dir: Optional[str] = None, _internal_call: bool = False):
-        output_dir = output_dir if output_dir is not None else self.args.output_dir
-        os.makedirs(output_dir, exist_ok=True)
-
-        model_to_save = unwrap_model(self.model)
-
-        state_dict_path = os.path.join(output_dir, "pytorch_model.bin")
-        torch.save(model_to_save.state_dict(), state_dict_path)
-
-        if hasattr(model_to_save, "config") and isinstance(model_to_save.config, PretrainedConfig):
-            model_to_save.config.save_pretrained(output_dir)
-
-        if hasattr(model_to_save, "text_tokenizer") and model_to_save.text_tokenizer is not None:
-            model_to_save.text_tokenizer.save_pretrained(output_dir)
-
-        self.state.save_to_json(os.path.join(output_dir, "trainer_state.json"))
-
-        print(f"[VLACTrainer] Save terminated in {output_dir}")
-
