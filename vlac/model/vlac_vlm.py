@@ -33,8 +33,12 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
         self.llm = self.vlac.llm
         self.config.is_decoder = True
         self.config.is_encoder_decoder = False
+        self.start_embeds = None
+        self.start_pos_ids = None
+        self.IM_START_TOKEN_INDEX = self.vlac.text_tokenizer.convert_tokens_to_ids(DEFAULT_IM_START_TOKEN)
+        self.IM_END_TOKEN_INDEX = self.vlac.text_tokenizer.convert_tokens_to_ids(DEFAULT_IM_END_TOKEN)
 
-    def prepare_embeds_for_multimodal(  # TODO Optimize this func for more parallelism with torch
+    def prepare_embeds_for_multimodal(
             self,
             input_ids,
             position_ids,
@@ -44,29 +48,12 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             images,
     ):
         if images is None or input_ids.shape[1] == 1:
-            if past_key_values is not None and images is not None and input_ids.shape[1] == 1:
-                target_shape = past_key_values[-1][-1].shape[-2] + 1
-                attention_mask = torch.cat(
-                    (
-                        attention_mask,
-                        torch.ones(
-                            (
-                                attention_mask.shape[0],
-                                target_shape - attention_mask.shape[1],
-                            ),
-                            dtype=attention_mask.dtype,
-                            device=attention_mask.device,
-                        ),
-                    ),
-                    dim=1,
-                )
-                position_ids = torch.sum(attention_mask, dim=1).unsqueeze(-1) - 1
             return (
-                input_ids,
+                None,
                 position_ids,
                 attention_mask,
                 past_key_values,
-                None,
+                self.vlac.text_embeds(input_ids),
                 labels,
             )
 
@@ -94,15 +81,13 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
         input_ids_copy = input_ids.clone()
         img_token_mask = input_ids_copy == IMAGE_TOKEN_INDEX
         input_ids_copy[img_token_mask] = 0
-        input_embeds = self.vlac.text_embeds(input_ids_copy)
+        input_embeds = self.vlac.text_embeds(input_ids_copy).to(image_features.dtype)
 
         B, N, D = input_embeds.shape
         im_seq_len = image_features.shape[1]
 
-        IM_START_TOKEN_INDEX = self.vlac.text_tokenizer.convert_tokens_to_ids(DEFAULT_IM_START_TOKEN)
-        IM_END_TOKEN_INDEX = self.vlac.text_tokenizer.convert_tokens_to_ids(DEFAULT_IM_END_TOKEN)
-        wIMs = torch.where(input_ids_copy.eq(IM_START_TOKEN_INDEX))
-        wIMe = torch.where(input_ids_copy.eq(IM_END_TOKEN_INDEX))
+        wIMs = torch.where(input_ids_copy.eq(self.IM_START_TOKEN_INDEX))
+        wIMe = torch.where(input_ids_copy.eq(self.IM_END_TOKEN_INDEX))
         assert len(wIMs[0]) == len(image_features) and wIMs[0].shape == wIMe[0].shape and wIMs[0].eq(wIMe[0]).all().item() and wIMs[1].add(1).eq(wIMe[1]).all().item()
         im_per_batch = wIMs[0].unique(return_counts=True)[1]
         del wIMs, wIMe
@@ -112,7 +97,7 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
         if getattr(self.llm.config, "tokenizer_padding_side", "right") == "left":
             raise UnsupportedOperation("Left padding is actually not supported")
 
-        im_ids = torch.nonzero(input_ids_copy.eq(IM_END_TOKEN_INDEX))
+        im_ids = torch.nonzero(input_ids_copy.eq(self.IM_END_TOKEN_INDEX))
         counts = im_per_batch.mul(im_seq_len).unsqueeze(-1)
         decals = torch.arange(0, counts.max(), im_seq_len, device=counts.device)[None].expand(B, -1)
         decals = decals[decals < counts]
@@ -130,7 +115,7 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
         new_attention_mask[text_mask] = attention_mask.flatten()
 
         new_input_embeds = input_embeds.new_empty((B, W, D))
-        new_input_embeds[im_mask] = image_features.flatten(0, 1).to(input_embeds.dtype)
+        new_input_embeds[im_mask] = image_features.flatten(0, 1)
         new_input_embeds[text_mask] = input_embeds.flatten(0, 1)
         new_labels = labels.new_empty((B, W, tokens.shape[-1]))
         new_labels[im_mask] = tokens.flatten(0, 1)
@@ -172,13 +157,24 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             output_hidden_states: Optional[bool] = None,
             return_dict: Optional[bool] = None,
             seqlens_in_batch: Optional[torch.LongTensor] = None,
-            vision_tower=None,
-            mm_projector=None,
             image_ids=None,
             cfg=None,
     ):
         if image_ids is None:
             image_ids = []
+        if inputs_embeds is not None:
+            self.start_embeds = inputs_embeds
+            self.start_pos_ids = position_ids
+        gen_image = False
+        if input_ids is not None:
+            if inputs_embeds is not None:
+                raise UnsupportedOperation("You cannot specify both input_ids and inputs_embeds at the same time")
+            gen_image = input_ids[:, -1].eq(self.IM_START_TOKEN_INDEX).any()
+            if input_ids[:, -1].eq(self.IM_END_TOKEN_INDEX).any():
+                raise RuntimeError("TODO : make image")
+            input_ids, position_ids, attention_mask, past_key_values, inputs_embeds, labels = self.prepare_embeds_for_multimodal(input_ids, position_ids, attention_mask, past_key_values, labels, None)
+            inputs_embeds = inputs_embeds.to(self.start_embeds.dtype)
+
         outputs = self.llm.model(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -189,18 +185,15 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
-            seqlens_in_batch=seqlens_in_batch,
-            vision_tower=vision_tower,
-            mm_projector=mm_projector,
-            image_ids=image_ids,
+            seqlens_in_batch=seqlens_in_batch
         )
         hidden_states = outputs.last_hidden_state
-        self.vlac.vision_tower.rqtransformer.eval()
-        hidden_states = hidden_states.to(torch.float)
-        image_hidden_state, code = self.vlac.vision_tower.rqtransformer.generate(hidden_states.to(self.vlac.vision_tower.device), self.vlac.vision_tower.rqvaesiglip, cfg)
-        image_hidden_state = self.vlac.mm_projector(image_hidden_state)
-        hidden_states = image_hidden_state
-        # image_ids.append(code)
+        if gen_image:
+            self.vlac.vision_tower.rqtransformer.eval()
+            image_hidden_state, code = self.vlac.vision_tower.rqtransformer.generate(hidden_states[:, -1].to(torch.float).to(self.vlac.vision_tower.device), self.vlac.vision_tower.rqvaesiglip, cfg)
+            image_hidden_state = self.vlac.mm_projector(image_hidden_state)
+            hidden_states[:, -1] = image_hidden_state
+            image_ids.append(code)
         loss = None
         logits = self.lm_head(hidden_states).float()
         return CausalLMOutputWithPast(
