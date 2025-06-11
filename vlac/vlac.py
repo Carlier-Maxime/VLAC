@@ -23,6 +23,7 @@ class VLACConfig(PretrainedConfig):
             mm_projector_type: str = './vila-u-7b-256/mm_projector',
             text_embeds_type: str = './vila-u-7b-256/text_embeddings',
             text_tokenizer_type: str = './vila-u-7b-256/llm',
+            project_multimodal_type: str = 'linear',
             verbose: bool = False,
             **kwargs
     ):
@@ -32,6 +33,7 @@ class VLACConfig(PretrainedConfig):
         self.mm_projector_type = mm_projector_type
         self.text_embeds_type = text_embeds_type
         self.text_tokenizer_type = text_tokenizer_type
+        self.project_multimodal_type = project_multimodal_type
         self.verbose = verbose
 
 

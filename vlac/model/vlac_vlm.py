@@ -3,9 +3,11 @@ from io import UnsupportedOperation
 from typing import Optional, List
 
 import torch
+import torch.nn as nn
 from transformers import PreTrainedModel, PretrainedConfig, AutoModelForCausalLM, GenerationMixin
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
+from vlac.model.multimodal_projector.base_projector import MultimodalProjectorConfig, MultimodalProjector
 from vlac.constants import IGNORE_INDEX, IMAGE_TOKEN_INDEX, DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
 
@@ -17,9 +19,10 @@ class VLACVLMConfig(PretrainedConfig):
         self.is_decoder = True
         self.add_cross_attention = False
         self.tie_word_embeddings = True
-        if self.vlac is not None:
-            self.vocab_size = vlac.llm.config.vocab_size
-            self.hidden_size = vlac.llm.config.hidden_size
+        if self.vlac is None:
+            return
+        self.vocab_size = self.vlac.text_embeds.config.num_embeddings
+        self.hidden_size = vlac.llm.config.hidden_size
 
 
 class VLACForCausalLM(PreTrainedModel, GenerationMixin):
@@ -30,6 +33,10 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
         self.config = config
         object.__setattr__(self, 'vlac', self.config.vlac)
         self.lm_head = self.vlac.llm.lm_head
+        if self.config.vocab_size != self.lm_head.out_features:
+            print(f"WARNING : lm_head has been recreate because out_features ({self.lm_head.out_features}) mismatch with vocab_size ({self.config.vocab_size}) !")
+            self.lm_head = nn.Linear(self.config.hidden_size, self.config.vocab_size, bias=False).to(self.lm_head.weight.device).to(self.lm_head.weight.dtype)
+            self.vlac.llm.lm_head = self.lm_head
         self.llm = self.vlac.llm
         self.config.is_decoder = True
         self.config.is_encoder_decoder = False
@@ -37,6 +44,9 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
         self.start_pos_ids = None
         self.IM_START_TOKEN_INDEX = self.vlac.text_tokenizer.convert_tokens_to_ids(DEFAULT_IM_START_TOKEN)
         self.IM_END_TOKEN_INDEX = self.vlac.text_tokenizer.convert_tokens_to_ids(DEFAULT_IM_END_TOKEN)
+        mm_conf = MultimodalProjectorConfig(self.vlac.config.project_multimodal_type)
+        self.encoder = MultimodalProjector(mm_conf, PretrainedConfig(mm_hidden_size=self.vlac.config.hidden_size, hidden_size=self.config.hidden_size)).to(self.vlac.device_map["mm_projector"]).to(torch.bfloat16)
+        self.decoder = MultimodalProjector(mm_conf, PretrainedConfig(mm_hidden_size=self.vlac.config.hidden_size, hidden_size=self.config.hidden_size)).to(self.vlac.device_map["mm_projector"]).to(torch.bfloat16)
 
     def prepare_embeds_for_multimodal(
             self,
@@ -53,7 +63,7 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
                 position_ids,
                 attention_mask,
                 past_key_values,
-                self.vlac.text_embeds(input_ids),
+                self.encoder(self.vlac.text_embeds(input_ids).to(self.encoder.dtype)),
                 labels,
             )
 
@@ -63,7 +73,7 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             images = images.flatten(0, 1)
 
         image_features, tokens = self.vlac.encode_images(images)
-        image_features = self.vlac.project_img_features(image_features).to(self.llm.device)
+        image_features = self.encoder(self.vlac.project_img_features(image_features).to(self.llm.device))
         tokens = tokens.to(self.llm.device).flatten(1, -2)
 
         _labels = labels
@@ -81,7 +91,7 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
         input_ids_copy = input_ids.clone()
         img_token_mask = input_ids_copy == IMAGE_TOKEN_INDEX
         input_ids_copy[img_token_mask] = 0
-        input_embeds = self.vlac.text_embeds(input_ids_copy).to(image_features.dtype)
+        input_embeds = self.encoder(self.vlac.text_embeds(input_ids_copy).to(image_features.dtype))
 
         B, N, D = input_embeds.shape
         im_seq_len = image_features.shape[1]
@@ -190,7 +200,7 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
         hidden_states = outputs.last_hidden_state
         if gen_image:
             self.vlac.vision_tower.rqtransformer.eval()
-            image_hidden_state, code = self.vlac.vision_tower.rqtransformer.generate(hidden_states[:, -1].to(torch.float).to(self.vlac.vision_tower.device), self.vlac.vision_tower.rqvaesiglip, cfg)
+            image_hidden_state, code = self.vlac.vision_tower.rqtransformer.generate(self.decoder(hidden_states[:, -1]).to(torch.float).to(self.vlac.vision_tower.device), self.vlac.vision_tower.rqvaesiglip, cfg)
             image_hidden_state = self.vlac.mm_projector(image_hidden_state)
             hidden_states[:, -1] = image_hidden_state
             image_ids.append(code)
