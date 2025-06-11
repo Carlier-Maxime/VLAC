@@ -90,26 +90,20 @@ class VLAC(PreTrainedModel):
         self.llm.to(self.device_map["llm"])
 
     def forward(self, prompt, vision, max_len: int = 128, generation_nums: int = 1, cfg: float = 3, **_):
-        inputs_embeds, attention_mask = self.make_multimodal_embeds(prompt, vision)
-        outputs = self.vlm.generate(inputs_embeds=inputs_embeds, attention_mask=attention_mask, max_new_tokens=self.vision_tower.image_tokens, cfg=cfg)
-        response = self.text_tokenizer.decode(outputs.flatten(), skip_special_tokens=True).strip()
-        print(response)
-
-        out_vision = self.encode_decode_images(vision)[0]
-        with torch.no_grad():
-            outputs = self.llm.generate(
-                **inputs,
-                max_length=max_len,
-                num_return_sequences=1,
-                do_sample=True,
-                repetition_penalty=1.1,
-                pad_token_id=self.text_tokenizer.eos_token_id,
-                eos_token_id=self.text_tokenizer.eos_token_id,
-                no_repeat_ngram_size=3,
-                num_beams=2
-            )
-        response = self.text_tokenizer.decode(outputs[0], skip_special_tokens=True)
-        return response, out_vision
+        _, inputs_embeds, attention_mask = self.make_multimodal_embeds(prompt, vision)
+        image_ids = []
+        outputs = self.vlm.generate(
+            inputs_embeds=inputs_embeds,
+            attention_mask=attention_mask,
+            max_new_tokens=self.vision_tower.image_tokens,
+            pad_token_id=self.text_tokenizer.eos_token_id,
+            eos_token_id=self.text_tokenizer.eos_token_id,
+            image_ids=image_ids,
+            cfg=cfg
+        )
+        out_prompt = self.text_tokenizer.decode(outputs.flatten(), skip_special_tokens=True)
+        out_vision = None
+        return out_prompt, out_vision
 
     def make_multimodal_embeds(self, prompt, vision):
         inputs = self.text_tokenizer(prompt, padding=True, return_tensors="pt")
@@ -117,8 +111,8 @@ class VLAC(PreTrainedModel):
         input_ids = inputs["input_ids"]
         attention_mask = inputs["attention_mask"]
         images = self.prepare_images(vision)
-        _, _, attention_mask, _, inputs_embeds, _ = self.vlm.prepare_embeds_for_multimodal(input_ids, None, attention_mask, None, None, images)
-        return inputs_embeds, attention_mask
+        _, _, attention_mask, _, multimodal_embeds, multimodal_tokens = self.vlm.prepare_embeds_for_multimodal(input_ids, None, attention_mask, None, input_ids, images)
+        return multimodal_tokens, multimodal_embeds, attention_mask
 
     def prepare_images(self, images):
         if isinstance(images, PIL.Image.Image) or isinstance(images, list):
