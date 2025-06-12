@@ -35,8 +35,13 @@ class RQVAESiglipModel(PreTrainedModel):
         except:
             self.decoder_latent_shape = None
 
-        self.logit_scale = self.siglip_model.logit_scale
-        self.logit_bias = self.siglip_model.logit_bias
+    @property
+    def logit_scale(self):
+        return self.siglip_model.logit_scale
+
+    @property
+    def logit_bias(self):
+        return self.siglip_model.logit_bias
 
     def encode_image(self, image):
         vision_model = self.siglip_model.vision_model

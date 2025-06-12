@@ -21,7 +21,7 @@ class VLACVLMConfig(PretrainedConfig):
         self.tie_word_embeddings = True
         if self.vlac is None:
             return
-        self.vocab_size = self.vlac.text_embeds.config.num_embeddings
+        self.vocab_size = self.vlac.text_embeds.num_embeddings
         self.hidden_size = vlac.llm.config.hidden_size
 
 
@@ -31,13 +31,9 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
     def __init__(self, config):
         super().__init__(config)
         self.config = config
-        object.__setattr__(self, 'vlac', self.config.vlac)
-        self.lm_head = self.vlac.llm.lm_head
         if self.config.vocab_size != self.lm_head.out_features:
             print(f"WARNING : lm_head has been recreate because out_features ({self.lm_head.out_features}) mismatch with vocab_size ({self.config.vocab_size}) !")
-            self.lm_head = nn.Linear(self.config.hidden_size, self.config.vocab_size, bias=False).to(self.lm_head.weight.device).to(self.lm_head.weight.dtype)
-            self.vlac.llm.lm_head = self.lm_head
-        self.llm = self.vlac.llm
+            self.llm.lm_head = nn.Linear(self.config.hidden_size, self.config.vocab_size, bias=False).to(self.lm_head.weight.device).to(self.lm_head.weight.dtype)
         self.config.is_decoder = True
         self.config.is_encoder_decoder = False
         self.start_embeds = None
@@ -47,6 +43,18 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
         mm_conf = MultimodalProjectorConfig(self.vlac.config.project_multimodal_type)
         self.encoder = MultimodalProjector(mm_conf, PretrainedConfig(mm_hidden_size=self.vlac.config.hidden_size, hidden_size=self.config.hidden_size)).to(torch.bfloat16)
         self.decoder = MultimodalProjector(mm_conf, PretrainedConfig(mm_hidden_size=self.vlac.config.hidden_size, hidden_size=self.config.hidden_size)).to(torch.bfloat16)
+
+    @property
+    def vlac(self):
+        return self.config.vlac
+
+    @property
+    def llm(self):
+        return self.vlac.llm
+
+    @property
+    def lm_head(self):
+        return self.vlac.llm.lm_head
 
     def prepare_embeds_for_multimodal(
             self,
@@ -219,6 +227,5 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
 
     def set_output_embeddings(self, new_embeddings):
         self.lm_head = new_embeddings
-
 
 AutoModelForCausalLM.register(VLACVLMConfig, VLACForCausalLM)

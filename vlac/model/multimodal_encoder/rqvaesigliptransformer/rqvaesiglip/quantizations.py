@@ -1,6 +1,7 @@
 """
     Modified from https://github.com/kakaobrain/rq-vae-transformer/blob/main/rqvae/models/rqvae/quantizations.py.
 """
+from collections.abc import Sized
 
 import numpy as np
 import torch
@@ -134,6 +135,23 @@ class VQEmbedding(nn.Embedding):
         return embeds
 
 
+class FakeList(nn.Module, Sized):
+    def __init__(self, item, length, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        setattr(self, '0', item)
+        self.len = length
+
+    def __getitem__(self, idx):
+        return getattr(self, '0')
+
+    def __len__(self):
+        return self.len
+
+    def __iter__(self):
+        for i in range(len(self)):
+            yield self[i]
+
+
 class RQBottleneck(nn.Module):
     """
     Quantization bottleneck via Residual Quantization.
@@ -182,21 +200,23 @@ class RQBottleneck(nn.Module):
         self.decay = decay if isinstance(decay, Iterable) else [decay for _ in range(self.code_shape[-1])]
         assert len(self.n_embed) == self.code_shape[-1]
         assert len(self.decay) == self.code_shape[-1]
-
         if self.shared_codebook:
-            codebook0 = VQEmbedding(self.n_embed[0],
-                                    embed_dim,
-                                    decay=self.decay[0],
-                                    restart_unused_codes=restart_unused_codes,
-                                    )
-            self.codebooks = nn.ModuleList([codebook0 for _ in range(self.code_shape[-1])])
+            self.codebooks = FakeList(
+                VQEmbedding(self.n_embed[0],
+                            embed_dim,
+                            decay=self.decay[0],
+                            restart_unused_codes=restart_unused_codes
+                            ),
+                self.code_shape[-1]
+            )
         else:
-            codebooks = [VQEmbedding(self.n_embed[idx],
-                                     embed_dim,
-                                     decay=self.decay[idx],
-                                     restart_unused_codes=restart_unused_codes,
-                                     ) for idx in range(self.code_shape[-1])]
-            self.codebooks = nn.ModuleList(codebooks)
+            self.codebooks = nn.ModuleList([
+                VQEmbedding(self.n_embed[idx],
+                            embed_dim,
+                            decay=self.decay[idx],
+                            restart_unused_codes=restart_unused_codes,
+                            ) for idx in range(self.code_shape[-1])
+            ])
 
         self.commitment_loss = commitment_loss
 

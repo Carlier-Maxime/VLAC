@@ -64,12 +64,15 @@ class VLAC(PreTrainedModel):
             torch_dtype=torch.bfloat16,
             trust_remote_code=True
         )
-        self.text_embeds = TextEmbedding.from_pretrained(self.config.text_embeds_type)
-        self.llm.set_input_embeddings(self.text_embeds.embeds)
+        self.llm.set_input_embeddings(TextEmbedding.from_pretrained(self.config.text_embeds_type).embeds)
 
     def __wrap_vlm(self):
         config = VLACVLMConfig(self)
         self.vlm = VLACForCausalLM(config)
+
+    @property
+    def text_embeds(self):
+        return self.llm.get_input_embeddings()
 
     def forward(self, prompt, vision, max_len: int = 128, generation_nums: int = 1, cfg: float = 3, **_):
         _, inputs_embeds, attention_mask = self.make_multimodal_embeds(prompt, vision)
