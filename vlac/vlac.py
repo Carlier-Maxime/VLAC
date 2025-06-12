@@ -1,9 +1,8 @@
 import os
-from typing import Dict, Union, Optional, Callable
+from typing import Union, Optional, Callable
 
 import torch
 import PIL.Image
-import torch.nn as nn
 from transformers import PreTrainedModel, PretrainedConfig, AutoTokenizer, AutoModelForCausalLM
 
 from vlac.model.multimodal_encoder.rqvaesigliptransformer import RQVAESIGLIPTransformerConfig
@@ -11,7 +10,6 @@ from vlac.model.multimodal_encoder.rqvaesigliptransformer_encoder import RQVAESI
 from vlac.model.multimodal_projector.base_projector import MultimodalProjectorConfig, MultimodalProjector
 from vlac.model.text_embedding import TextEmbedding
 from vlac.model.vlac_vlm import VLACForCausalLM, VLACVLMConfig
-from vlac.utils.gpu_memory_utils import track_gpu_memory_usage, print_gpus_memory_usage
 
 
 class VLACConfig(PretrainedConfig):
@@ -25,7 +23,6 @@ class VLACConfig(PretrainedConfig):
             text_embeds_type: str = './vila-u-7b-256/text_embeddings',
             text_tokenizer_type: str = './vila-u-7b-256/llm',
             project_multimodal_type: str = 'linear',
-            verbose: bool = False,
             **kwargs
     ):
         super().__init__(**kwargs)
@@ -35,7 +32,6 @@ class VLACConfig(PretrainedConfig):
         self.text_embeds_type = text_embeds_type
         self.text_tokenizer_type = text_tokenizer_type
         self.project_multimodal_type = project_multimodal_type
-        self.verbose = verbose
 
 
 class VLAC(PreTrainedModel):
@@ -44,21 +40,10 @@ class VLAC(PreTrainedModel):
     def __init__(self, config: VLACConfig):
         super().__init__(config)
         self.config = config
-        self.device_map: Dict = config.device_map
-        if config.verbose:
-            print("\n=== Loading Model =============")
-            print_gpus_memory_usage("Initial")
-            track_gpu_memory_usage(self.__load_vision_tower, self.device_map["vision_tower"])
-            track_gpu_memory_usage(self.__load_projector, self.device_map["mm_projector"])
-            track_gpu_memory_usage(self.__load_llm, self.device_map["llm"])
-            self.__wrap_vlm()
-            print_gpus_memory_usage("Final")
-            print("===============================\n")
-        else:
-            self.__load_vision_tower()
-            self.__load_projector()
-            self.__load_llm()
-            self.__wrap_vlm()
+        self.__load_vision_tower()
+        self.__load_projector()
+        self.__load_llm()
+        self.__wrap_vlm()
 
     def __load_vision_tower(self):
         is_pretrain = isinstance(self.config.vision_tower_type, str)
@@ -66,31 +51,25 @@ class VLAC(PreTrainedModel):
             config = RQVAESIGLIPTransformerConfig.from_pretrained(self.config.vision_tower_type)
         else:
             config = RQVAESIGLIPTransformerConfig.from_dict(self.config.vision_tower_type)
-        config.device_map = self.device_map
-        self.vision_tower = RQVAESIGLIPTransformerVisionTower(self.config.vision_tower_type if is_pretrain else None, config).to(self.device_map["vision_tower"])
+        self.vision_tower = RQVAESIGLIPTransformerVisionTower(self.config.vision_tower_type if is_pretrain else None, config)
 
     def __load_projector(self):
         config = MultimodalProjectorConfig.from_pretrained(self.config.mm_projector_type)
-        config.device_map = self.device_map
-        self.mm_projector = MultimodalProjector(config, self.config).to(self.device_map["mm_projector"]).to(torch.bfloat16)
+        self.mm_projector = MultimodalProjector(config, self.config).to(torch.bfloat16)
 
     def __load_llm(self):
         self.text_tokenizer = AutoTokenizer.from_pretrained(self.config.text_tokenizer_type, trust_remote_code=True)
-        device = self.device_map["llm"]
         self.llm = AutoModelForCausalLM.from_pretrained(
             self.config.llm_type,
             torch_dtype=torch.bfloat16,
-            trust_remote_code=True,
-            device_map=device
+            trust_remote_code=True
         )
-        print(f"{TextEmbedding} : {self.config.text_embeds_type}")
-        self.text_embeds = TextEmbedding.from_pretrained(self.config.text_embeds_type, trust_remote_code=True).to(device)
+        self.text_embeds = TextEmbedding.from_pretrained(self.config.text_embeds_type)
         self.llm.set_input_embeddings(self.text_embeds.embeds)
 
     def __wrap_vlm(self):
         config = VLACVLMConfig(self)
         self.vlm = VLACForCausalLM(config)
-        self.llm.to(self.device_map["llm"])
 
     def forward(self, prompt, vision, max_len: int = 128, generation_nums: int = 1, cfg: float = 3, **_):
         _, inputs_embeds, attention_mask = self.make_multimodal_embeds(prompt, vision)
@@ -123,9 +102,7 @@ class VLAC(PreTrainedModel):
         return images.to(self.vision_tower.device).to(torch.bfloat16)
 
     def project_img_features(self, features):
-        device = self.device_map["mm_projector"]
-        self.mm_projector.to(device)
-        embeds = self.mm_projector(features.to(device)).to(self.llm.device)
+        embeds = self.mm_projector(features).to(self.llm.device)
         return embeds.reshape(embeds.shape[0], -1, embeds.shape[-1])
 
     def unproject_img_features(self, embeds):
@@ -165,4 +142,3 @@ class VLAC(PreTrainedModel):
         self.config.save_pretrained(save_directory)
         self.text_tokenizer.save_pretrained(save_directory)
         print(f"VLAC saved in {save_directory}.")
-

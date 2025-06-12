@@ -45,8 +45,8 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
         self.IM_START_TOKEN_INDEX = self.vlac.text_tokenizer.convert_tokens_to_ids(DEFAULT_IM_START_TOKEN)
         self.IM_END_TOKEN_INDEX = self.vlac.text_tokenizer.convert_tokens_to_ids(DEFAULT_IM_END_TOKEN)
         mm_conf = MultimodalProjectorConfig(self.vlac.config.project_multimodal_type)
-        self.encoder = MultimodalProjector(mm_conf, PretrainedConfig(mm_hidden_size=self.vlac.config.hidden_size, hidden_size=self.config.hidden_size)).to(self.vlac.device_map["mm_projector"]).to(torch.bfloat16)
-        self.decoder = MultimodalProjector(mm_conf, PretrainedConfig(mm_hidden_size=self.vlac.config.hidden_size, hidden_size=self.config.hidden_size)).to(self.vlac.device_map["mm_projector"]).to(torch.bfloat16)
+        self.encoder = MultimodalProjector(mm_conf, PretrainedConfig(mm_hidden_size=self.vlac.config.hidden_size, hidden_size=self.config.hidden_size)).to(torch.bfloat16)
+        self.decoder = MultimodalProjector(mm_conf, PretrainedConfig(mm_hidden_size=self.vlac.config.hidden_size, hidden_size=self.config.hidden_size)).to(torch.bfloat16)
 
     def prepare_embeds_for_multimodal(
             self,

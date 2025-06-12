@@ -6,11 +6,5 @@
   "text_tokenizer_type": "./vila-u-7b-256/llm",
   "mm_hidden_size": 1024,
   "hidden_size": 4096,
-  "project_multimodal_type": "linear",
-  "device_map": {
-    "vision_tower": "cuda:1",
-    "mm_projector": "cuda:1",
-    "llm": "cuda:1"
-  },
-  "verbose": true
+  "project_multimodal_type": "linear"
 }
