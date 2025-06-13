@@ -1,6 +1,7 @@
 import argparse
 import os
 
+import torch
 import webdataset as wds
 from tqdm import tqdm
 
@@ -23,7 +24,8 @@ def open_tar(start_id, args):
     return wds.TarWriter(os.path.join(args.output_dir, f"{start_id:0{args.digits_of_id}d}_{start_id+args.part_len:0{args.digits_of_id}d}.tar"), encoder=True)
 
 
-if __name__ == "__main__":
+@torch.no_grad()
+def main():
     args = get_args()
     os.makedirs(args.output_dir, exist_ok=True)
     vlac = VLAC.from_pretrained(args.model).to(args.device)
@@ -50,3 +52,7 @@ if __name__ == "__main__":
                 tar.close()
                 tar = open_tar(start_id, args)
     tar.close()
+
+
+if __name__ == "__main__":
+    main()
