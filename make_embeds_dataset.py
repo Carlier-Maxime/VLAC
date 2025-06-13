@@ -37,14 +37,19 @@ def main():
         input_ids = text_tokens["input_ids"].to(args.device)
         attention_mask = text_tokens["attention_mask"].to(args.device)
         _, _, attention_mask, _, multimodal_embeds, multimodal_tokens = vlac.vlm.prepare_embeds_for_multimodal(input_ids, None, attention_mask, None, input_ids, vision)
-        for mask, embeds, tokens in tqdm(zip(attention_mask, multimodal_embeds, multimodal_tokens), desc='Save Batch', unit='sample', total=args.batch_size):
+        ids = torch.arange(attention_mask.shape[-1], device=args.device).unsqueeze(0).expand(attention_mask.shape[0], -1)
+        limits = torch.where(attention_mask.bool(), ids, 0).add_(1).max(dim=1)[0].cpu().tolist()
+        attention_mask = attention_mask.cpu().chunk(args.batch_size)
+        multimodal_embeds = multimodal_embeds.cpu().chunk(args.batch_size)
+        multimodal_tokens = multimodal_tokens.cpu().chunk(args.batch_size)
+        for mask, embeds, tokens, limit in tqdm(zip(attention_mask, multimodal_embeds, multimodal_tokens, limits), desc='Save Batch', unit='sample', total=args.batch_size):
             if mask.sum() == 0:
                 continue
             tar.write({
                 "__key__": str(count),
-                "mask.pth": mask,
-                "embeds.pth": embeds,
-                "tokens.pth": tokens
+                "mask.pth": mask[:limit],
+                "embeds.pth": embeds[:limit],
+                "tokens.pth": tokens[:limit]
             })
             count += 1
             if count >= start_id + args.part_len:
