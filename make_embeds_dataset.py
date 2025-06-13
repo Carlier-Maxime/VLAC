@@ -42,7 +42,7 @@ def main():
         attention_mask = attention_mask.cpu().chunk(args.batch_size)
         multimodal_embeds = multimodal_embeds.cpu().chunk(args.batch_size)
         multimodal_tokens = multimodal_tokens.cpu().chunk(args.batch_size)
-        for mask, embeds, tokens, limit in tqdm(zip(attention_mask, multimodal_embeds, multimodal_tokens, limits), desc='Save Batch', unit='sample', total=args.batch_size):
+        for mask, embeds, tokens, limit in tqdm(zip(attention_mask, multimodal_embeds, multimodal_tokens, limits), desc='Save Batch', unit='sample', total=args.batch_size, disable=args.batch_size <= 8, leave=False):
             if mask.sum() == 0:
                 continue
             tar.write({
