@@ -106,7 +106,7 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
 
         wIMs = torch.where(input_ids_copy.eq(self.IM_START_TOKEN_INDEX))
         wIMe = torch.where(input_ids_copy.eq(self.IM_END_TOKEN_INDEX))
-        assert len(wIMs[0]) == len(image_features) and wIMs[0].shape == wIMe[0].shape and wIMs[0].eq(wIMe[0]).all().item() and wIMs[1].add(1).eq(wIMe[1]).all().item()
+        assert len(wIMs[0]) == len(image_features) and wIMs[0].shape == wIMe[0].shape and wIMs[0].eq(wIMe[0]).all().item() and wIMs[1].add(1).eq(wIMe[1]).all().item(), f'Bad synthax of IM_TOKEN, info : {len(image_features)} & {wIMs} & {wIMe}'
         im_per_batch = wIMs[0].unique(return_counts=True)[1]
         del wIMs, wIMe
         M = im_per_batch.max().item() * im_seq_len
