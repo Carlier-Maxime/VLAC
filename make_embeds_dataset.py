@@ -24,6 +24,10 @@ def open_tar(start_id, args):
     return wds.TarWriter(os.path.join(args.output_dir, f"{start_id:0{args.digits_of_id}d}_{start_id+args.part_len:0{args.digits_of_id}d}.tar"), encoder=True)
 
 
+def pre_save(tensor):
+    return tensor.cpu().detach().clone().contiguous()
+
+
 @torch.no_grad()
 def main():
     args = get_args()
@@ -39,17 +43,17 @@ def main():
         _, _, attention_mask, _, multimodal_embeds, multimodal_tokens = vlac.vlm.prepare_embeds_for_multimodal(input_ids, None, attention_mask, None, input_ids, vision)
         ids = torch.arange(attention_mask.shape[-1], device=args.device).unsqueeze(0).expand(attention_mask.shape[0], -1)
         limits = torch.where(attention_mask.bool(), ids, 0).add_(1).max(dim=1)[0].cpu().tolist()
-        attention_mask = attention_mask.cpu().chunk(args.batch_size)
-        multimodal_embeds = multimodal_embeds.cpu().chunk(args.batch_size)
-        multimodal_tokens = multimodal_tokens.cpu().chunk(args.batch_size)
+        attention_mask = attention_mask.cpu().split(1)
+        multimodal_embeds = multimodal_embeds.cpu().split(1)
+        multimodal_tokens = multimodal_tokens.cpu().split(1)
         for mask, embeds, tokens, limit in tqdm(zip(attention_mask, multimodal_embeds, multimodal_tokens, limits), desc='Save Batch', unit='sample', total=args.batch_size, disable=args.batch_size <= 8, leave=False):
             if mask.sum() == 0:
                 continue
             tar.write({
                 "__key__": str(count),
-                "mask.pth": mask[:limit],
-                "embeds.pth": embeds[:limit],
-                "tokens.pth": tokens[:limit]
+                "mask.pth": pre_save(mask[:limit]),
+                "embeds.pth": pre_save(embeds[:limit].clone()),
+                "tokens.pth": pre_save(tokens[:limit].clone())
             })
             count += 1
             if count >= start_id + args.part_len:
