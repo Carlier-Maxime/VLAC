@@ -19,10 +19,12 @@ def get_args():
     parser.add_argument("--part_len", type=int, default=1000)
     parser.add_argument("--digits_of_id", type=int, default=9)
     parser.add_argument("--procid", type=int, default=None)
-    parser.add_argument("--ntasks", type=int, default=COYO_LENGTH)
+    parser.add_argument("--ntasks", type=int, default=None)
     args = parser.parse_args()
 
     max_ntasks = COYO_LENGTH // args.part_len
+    if args.ntasks is None:
+        args.ntasks = max_ntasks
     if args.ntasks < 1 or args.ntasks > max_ntasks:
         parser.error(f"the ntasks must be between 1 and {max_ntasks}")
     if args.procid is not None and (args.procid < 0 or args.procid >= args.ntasks):
