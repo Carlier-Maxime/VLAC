@@ -3,7 +3,7 @@ from typing import Union, Optional, Callable
 
 import torch
 import PIL.Image
-from transformers import PreTrainedModel, PretrainedConfig, AutoTokenizer, AutoModelForCausalLM
+from transformers import PreTrainedModel, PretrainedConfig, AutoTokenizer, AutoModelForCausalLM, AutoConfig
 
 from vlac.model.multimodal_encoder.rqvaesigliptransformer import RQVAESIGLIPTransformerConfig
 from vlac.model.multimodal_encoder.rqvaesigliptransformer_encoder import RQVAESIGLIPTransformerVisionTower
@@ -134,3 +134,7 @@ class VLAC(PreTrainedModel):
         if config is None:
             config = VLACConfig.from_pretrained(pretrained_model_name_or_path)
         return super().from_pretrained(pretrained_model_name_or_path, config=config, *args, **kwargs)
+
+
+AutoConfig.register("vlac", VLACConfig)
+AutoModelForCausalLM.register(VLACConfig, VLAC)
