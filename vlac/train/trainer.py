@@ -5,7 +5,6 @@ from transformers import Trainer
 
 
 class VLACTrainer(Trainer):
-
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         text_tokens = inputs["text_tokens"]
         vision = inputs["vision"].to(torch.bfloat16)
@@ -33,3 +32,23 @@ class VLACTrainer(Trainer):
         loss_i = F.cross_entropy(logits, torch.arange(len(logits), device=logits.device))
         loss_t = F.cross_entropy(logits.T, torch.arange(len(logits), device=logits.device))
         return loss_i, loss_t
+
+
+class EncodeDecodeTrainer(Trainer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.mse = nn.MSELoss()
+
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        embeds = inputs["embeds"]
+        return self.mse(embeds, model(embeds))
+
+
+def getTrainerCls(name: str) -> type[Trainer]:
+    name = name.lower()
+    if "vlac" in name:
+        return VLACTrainer
+    elif "encodedecode" in name:
+        return EncodeDecodeTrainer
+    else:
+        raise ValueError(f"Unknown trainer name: {name}")
