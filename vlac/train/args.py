@@ -52,3 +52,4 @@ class TrainingArguments(transformers.TrainingArguments):
             "help": "Time to terminate the task inadvance (minutes), saveing checkpoints needs time."
         },
     )
+    trainer_type: str = field(default="vlac")
