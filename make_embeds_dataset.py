@@ -7,7 +7,7 @@ from tqdm import tqdm
 
 from vlac import VLAC
 from vlac.dataset.config import COYO_LENGTH
-from vlac.dataset.coyo import COYOWebDatasetIterable
+from vlac.dataset.dataset import COYOWebDatasetIterable
 
 
 def get_args():
