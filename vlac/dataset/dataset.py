@@ -6,6 +6,7 @@ import torch.utils.data
 import webdataset as wds
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import IterableDataset
+from webdataset import DecodingError
 
 from vlac.dataset.config import *
 from vlac.constants import DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
@@ -32,8 +33,14 @@ class WebDatasetIterable(IterableDataset):
         self.keys_out = keys_out
 
     def __iter__(self):
-        for data in self.dataset:
+        _iter = iter(self.dataset)
+        data = next(_iter, None)
+        while data is not None:
             yield {k: v for k, v in zip(self.keys_out, data)}
+            try:
+                data = next(_iter, None)
+            except DecodingError:
+                continue
 
     def __len__(self):
         return self.length // self.batch_size
