@@ -8,6 +8,7 @@ from tqdm import tqdm
 from vlac import VLAC
 from vlac.dataset.config import COYO_LENGTH
 from vlac.dataset.dataset import COYOWebDatasetIterable
+from vlac.utils.args import add_multiprocess_args, check_multiprocess_args
 
 
 def get_args():
@@ -18,20 +19,9 @@ def get_args():
     parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--part_len", type=int, default=1000)
     parser.add_argument("--digits_of_id", type=int, default=9)
-    parser.add_argument("--procid", type=int, default=None)
-    parser.add_argument("--ntasks", type=int, default=None)
+    parser = add_multiprocess_args(parser)
     args = parser.parse_args()
-
-    max_ntasks = COYO_LENGTH // args.part_len
-    if args.ntasks is None:
-        args.ntasks = max_ntasks
-    if args.ntasks < 1 or args.ntasks > max_ntasks:
-        parser.error(f"the ntasks must be between 1 and {max_ntasks}")
-    if args.procid is not None and (args.procid < 0 or args.procid >= args.ntasks):
-        parser.error("the procid must be between 0 and ntasks-1")
-    args.master = args.procid is None or args.procid == 0
-    print(f"task {args.procid} of {args.ntasks}")
-    return args
+    return check_multiprocess_args(parser, args, COYO_LENGTH // args.part_len)
 
 
 def open_tar(start_id, args):
