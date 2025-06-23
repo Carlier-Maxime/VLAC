@@ -4,7 +4,9 @@ import os
 from collections import OrderedDict
 
 import pandas as pd
+import numpy as np
 import torch.utils.data
+from torch.utils.data import Subset
 
 import vlac.dataset.webdataset as webdataset
 from vlac.constants import DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
@@ -32,7 +34,7 @@ class VLACDataset(torch.utils.data.Dataset):
         def clear(self):
             self.cache.clear()
 
-    def __init__(self, path: str, keys_read: Tuple[str, ...], keys_out: Tuple[str, ...], cache_max_files: int = 8, **_):
+    def __init__(self, path: str, keys_read: Tuple[str, ...] = None, keys_out: Tuple[str, ...] = None, cache_max_files: int = 8, **_):
         self.cache = VLACDataset.PandasParquetCache(cache_max_files)
         info = json.load(open(os.path.join(path, "info.json")))
         self.parquet_count = info["parquet_count"]
@@ -51,7 +53,7 @@ class VLACDataset(torch.utils.data.Dataset):
         i, df = self.get_df_for_sample_index(index)
         local_index = index - (1 + self.max_indices_per_parquet[i-1] if i > 0 else 0)
         out = df.iloc[local_index]
-        return {self.keys_out[i]: out[self.keys_read[i]] for i in range(len(self.keys_out))}
+        return out if self.keys_read is None else {self.keys_read[i] if self.keys_out is None else self.keys_out[i]: out[self.keys_read[i]] for i in range(len(self.keys_out))}
 
     def __next__(self):
         raise NotImplementedError
@@ -73,6 +75,11 @@ class VLACDataset(torch.utils.data.Dataset):
         if "collate_fn" not in kwargs.keys() or kwargs["collate_fn"] is None:
             kwargs["collate_fn"] = self.collate_fn
         return torch.utils.data.DataLoader(self, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, **kwargs)
+
+    def shard(self, nb_split: int, index_split: int):
+        ids = np.arange(self.total_samples)
+        part = self.total_samples // nb_split
+        return Subset(self, ids[part * index_split:part * (index_split + 1)])
 
 
 class COYODataset(VLACDataset):
