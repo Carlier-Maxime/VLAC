@@ -1,13 +1,13 @@
 from typing import Tuple
 
-COYO_PATH: str = "/media/hdd/datasets/coyo-700m"
-COYO_LENGTH: int = 4096
-COYO_SHUFFLE: int = 100
+COYO_LABELS_PATH: str = "/path/to/coyo/labels"
+COYO_LABELS_KEYS_READ: Tuple[str, ...] = ("id", "url", "text")
+COYO_LABELS_KEYS_OUT: Tuple[str, ...] = ("id", "url", "text")
+
+COYO_PATH: str = "/path/to/coyo"
 COYO_KEYS_READ: Tuple[str, ...] = ("png", "text")
 COYO_KEYS_OUT: Tuple[str, ...] = ("vision", "text_tokens")
 
-EMBEDS_PATH: str = "/media/hdd/datasets/coyo_embeds"
-EMBEDS_LENGTH: int = 4000
-EMBEDS_SHUFFLE: int = 100
+EMBEDS_PATH: str = "/path/to/embeds"
 EMBEDS_KEYS_READ: Tuple[str, ...] = ("embeds.pth", "mask.pth", "tokens.pth")
 EMBEDS_KEYS_OUT: Tuple[str, ...] = ("embeds", "attention_mask", "input_ids")

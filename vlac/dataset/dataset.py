@@ -1,96 +1,79 @@
 import glob
+import json
 import os
-from typing import Tuple
+from collections import OrderedDict
 
+import pandas as pd
 import torch.utils.data
-import webdataset as wds
-from torch.nn.utils.rnn import pad_sequence
-from torch.utils.data import IterableDataset
-from webdataset import DecodingError
 
+import vlac.dataset.webdataset as webdataset
 from vlac.dataset.config import *
-from vlac.constants import DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
 
-def collate_tensors(x):
-    return [pad_sequence([sample[i][0] for sample in x], batch_first=True).contiguous() for i in range(len(x[0]))]
+class VLACDataset(torch.utils.data.Dataset):
+    class PandasParquetCache:
+        def __init__(self, max_loaded_files: int):
+            self.max_loaded_files = max_loaded_files
+            self.cache = OrderedDict()  # filepath -> pd.DataFrame
 
+        def get(self, filepath):
+            if filepath in self.cache:
+                self.cache.move_to_end(filepath)
+                return self.cache[filepath]
 
-class WebDatasetIterable(IterableDataset):
-    def __init__(self, tars_path_pattern, keys_read: Tuple[str, ...], keys_out: Tuple[str, ...], preprocess, length: int, shuffle: int, batch_size: int = 1, collate_fn=wds.filters.default_collation_fn, **_):
-        self.length = length
-        self.batch_size = batch_size
-        self.dataset = wds.DataPipeline(
-            wds.SimpleShardList(sorted(glob.glob(tars_path_pattern))),
-            wds.split_by_worker,
-            wds.tarfile_to_samples(),
-            wds.shuffle(shuffle),
-            wds.decode("pil"),
-            wds.to_tuple(*keys_read),
-            wds.batched(batch_size, collation_fn=collate_fn),
-            wds.map(preprocess),
-        ).with_length(self.length)
+            if len(self.cache) >= self.max_loaded_files:
+                self.cache.popitem(last=False)
+
+            df = pd.read_parquet(filepath)
+            self.cache[filepath] = df
+            return df
+
+        def clear(self):
+            self.cache.clear()
+
+    def __init__(self, path: str, keys_read: Tuple[str, ...], keys_out: Tuple[str, ...], cache_max_files: int = 8, **_):
+        self.cache = VLACDataset.PandasParquetCache(cache_max_files)
+        info = json.load(open(os.path.join(path, "info.json")))
+        self.parquet_count = info["parquet_count"]
+        self.average_memory_per_parquet = info["average_memory_per_parquet"]
+        self.samples_per_parquet = info["samples_per_parquet"]
+        self.max_indices_per_parquet = info["max_indices_per_parquet"]
+        self.total_samples = info["total_samples"]
+        self.files = sorted(glob.glob(os.path.join(path, "*.parquet")))
+        self.keys_read = keys_read
         self.keys_out = keys_out
 
-    def __iter__(self):
-        _iter = iter(self.dataset)
-        data = next(_iter, None)
-        while data is not None:
-            yield {k: v for k, v in zip(self.keys_out, data)}
-            try:
-                data = next(_iter, None)
-            except DecodingError:
-                continue
-
     def __len__(self):
-        return self.length // self.batch_size
+        return self.total_samples
+
+    def __getitem__(self, index):
+        i, df = self.get_df_for_sample_index(index)
+        local_index = index - (1 + self.max_indices_per_parquet[i-1] if i > 0 else 0)
+        out = df.iloc[local_index]
+        return {self.keys_out[i]: out[self.keys_read[i]] for i in range(len(self.keys_out))}
+
+    def __next__(self):
+        raise NotImplementedError
+
+    def __iter__(self):
+        for i in range(self.total_samples):
+            yield self[i]
+
+    def get_df_for_sample_index(self, index):
+        for i, max_i in enumerate(self.max_indices_per_parquet):
+            if index < max_i:
+                return i, self.cache.get(self.files[i])
+        raise ValueError(f"index {index} is probably out of range or info.json is incorrect")
 
 
-class COYOWebDatasetIterable(WebDatasetIterable):
-    def __init__(self,
-                 img_preprocess,
-                 tokenizer,
-                 tars_path_pattern=os.path.join(COYO_PATH, "tars/*.tar"),
-                 keys_read: Tuple[str, ...] = COYO_KEYS_READ, keys_out: Tuple[str, ...] = COYO_KEYS_OUT,
-                 length: int = COYO_LENGTH,
-                 shuffle: int = COYO_SHUFFLE,
-                 batch_size: int = 1,
-                 **_
-                 ):
-        super().__init__(tars_path_pattern, keys_read, keys_out, self.preprocess, length, shuffle, batch_size)
-        self.img_preprocess = img_preprocess
-        self.tokenizer = tokenizer
-
-    @staticmethod
-    def __add_im_tokens(txt):
-        return f'{DEFAULT_IM_START_TOKEN}{DEFAULT_IM_END_TOKEN} : {txt}'
-
-    def preprocess(self, x):
-        img, txt = x
-        img = self.img_preprocess(img, return_tensors="pt")["pixel_values"]
-        txt = [self.__add_im_tokens(t) for t in txt] if isinstance(txt, list) else self.__add_im_tokens(txt)
-        text_tokens = self.tokenizer(txt, return_tensors="pt", padding=True)
-        return img, text_tokens
-
-
-class EmbedsWebDatasetIterable(WebDatasetIterable):
-    def __init__(self,
-                 tars_path_pattern=os.path.join(EMBEDS_PATH, "*.tar"),
-                 keys_read: Tuple[str, ...] = EMBEDS_KEYS_READ,
-                 keys_out: Tuple[str, ...] = EMBEDS_KEYS_OUT,
-                 length: int = EMBEDS_LENGTH,
-                 shuffle: int = EMBEDS_SHUFFLE,
-                 batch_size: int = 1,
-                 **_
-                 ):
-        super().__init__(tars_path_pattern, keys_read, keys_out, lambda x: x, length, shuffle, batch_size, collate_tensors)
-
-
-def getDatasetCls(name: str) -> type[torch.utils.data.Dataset | IterableDataset | WebDatasetIterable]:
+def getDataset(name: str, **kwargs) -> torch.utils.data.Dataset:
     name = name.lower()
-    if "coyo" in name:
-        return COYOWebDatasetIterable
+    if "webdataset" in name:
+        return webdataset.getDataset(name, **kwargs)
+    elif "coyo" in name:
+        if "labels" in name: return VLACDataset(COYO_LABELS_PATH, COYO_LABELS_KEYS_READ, COYO_LABELS_KEYS_OUT, **kwargs)
+        else: return VLACDataset(COYO_PATH, COYO_KEYS_READ, COYO_KEYS_OUT, **kwargs)
     elif "embeds" in name:
-        return EmbedsWebDatasetIterable
+        return VLACDataset(EMBEDS_PATH, EMBEDS_KEYS_READ, EMBEDS_KEYS_OUT, **kwargs)
     else:
         raise ValueError(f"Unknown dataset name: {name}")

@@ -4,7 +4,7 @@ from torch.nn.utils.rnn import pad_sequence
 from transformers import HfArgumentParser
 
 from vlac import VLACConfig, VLAC
-from vlac.dataset.dataset import getDatasetCls
+from vlac.dataset.dataset import getDataset
 from vlac.train.args import ModelArguments, DataArguments, TrainingArguments
 from vlac.train.trainer import getTrainerCls
 
@@ -29,7 +29,7 @@ def train():
         'img_preprocess': vlac.vision_tower.image_processor,
         'tokenizer': vlac.text_tokenizer
     }
-    dataset = getDatasetCls(data_args.data_mixture)(**dataset_args)
+    dataset = getDataset(data_args.data_mixture, **dataset_args)
     train_dataset = dataset
 
     for param in vlac.llm.parameters():
