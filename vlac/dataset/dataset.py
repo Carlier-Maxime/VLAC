@@ -7,6 +7,7 @@ import pandas as pd
 import torch.utils.data
 
 import vlac.dataset.webdataset as webdataset
+from vlac.constants import DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from vlac.dataset.config import *
 
 
@@ -65,15 +66,60 @@ class VLACDataset(torch.utils.data.Dataset):
                 return i, self.cache.get(self.files[i])
         raise ValueError(f"index {index} is probably out of range or info.json is incorrect")
 
+    def collate_fn(self, x):
+        return x
 
-def getDataset(name: str, **kwargs) -> torch.utils.data.Dataset:
+    def getDataLoader(self, batch_size: int, shuffle: bool = True, num_workers: int = 0, **kwargs):
+        if "collate_fn" not in kwargs.keys() or kwargs["collate_fn"] is None:
+            kwargs["collate_fn"] = self.collate_fn
+        return torch.utils.data.DataLoader(self, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, **kwargs)
+
+
+class COYODataset(VLACDataset):
+    def __init__(self, img_preprocess, tokenizer, **kwargs):
+        super().__init__(COYO_PATH, COYO_KEYS_READ, COYO_KEYS_OUT, **kwargs)
+        self.img_preprocess = img_preprocess
+        self.tokenizer = tokenizer
+
+    def collate_fn(self, x):
+        img = self.img_preprocess([s['vision'] for s in x], return_tensors="pt")["pixel_values"]
+        txt = [s['text_tokens'] for s in x]
+        txt = [self.__add_im_tokens(t) for t in txt] if isinstance(txt, list) else self.__add_im_tokens(txt)
+        text_tokens = self.tokenizer(txt, return_tensors="pt", padding=True)
+        return {
+            'vision': img,
+            'text_tokens': text_tokens,
+        }
+
+    @staticmethod
+    def __add_im_tokens(txt):
+        return f'{DEFAULT_IM_START_TOKEN}{DEFAULT_IM_END_TOKEN} : {txt}'
+
+
+class COYOLabelsDataset(VLACDataset):
+    def __init__(self, **kwargs):
+        super().__init__(COYO_LABELS_PATH, COYO_LABELS_KEYS_READ, COYO_LABELS_KEYS_OUT, **kwargs)
+
+    def collate_fn(self, x):
+        return x
+
+
+class EmbedsDataset(VLACDataset):
+    def __init__(self, **kwargs):
+        super().__init__(EMBEDS_PATH, EMBEDS_KEYS_READ, EMBEDS_KEYS_OUT, **kwargs)
+
+    def collate_fn(self, x):
+        return x
+
+
+def getDataset(name: str, **kwargs) -> torch.utils.data.Dataset | VLACDataset:
     name = name.lower()
     if "webdataset" in name:
         return webdataset.getDataset(name, **kwargs)
     elif "coyo" in name:
-        if "labels" in name: return VLACDataset(COYO_LABELS_PATH, COYO_LABELS_KEYS_READ, COYO_LABELS_KEYS_OUT, **kwargs)
-        else: return VLACDataset(COYO_PATH, COYO_KEYS_READ, COYO_KEYS_OUT, **kwargs)
+        if "labels" in name: return COYOLabelsDataset(**kwargs)
+        else: return COYODataset(**kwargs)
     elif "embeds" in name:
-        return VLACDataset(EMBEDS_PATH, EMBEDS_KEYS_READ, EMBEDS_KEYS_OUT, **kwargs)
+        return EmbedsDataset(**kwargs)
     else:
         raise ValueError(f"Unknown dataset name: {name}")

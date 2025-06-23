@@ -8,7 +8,6 @@ from torch.utils.data import IterableDataset
 from webdataset import DecodingError
 
 from vlac.dataset.config import *
-from vlac.constants import DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 
 
 def collate_tensors(x):
@@ -60,14 +59,10 @@ class COYOWebDatasetIterable(WebDatasetIterable):
         self.img_preprocess = img_preprocess
         self.tokenizer = tokenizer
 
-    @staticmethod
-    def __add_im_tokens(txt):
-        return f'{DEFAULT_IM_START_TOKEN}{DEFAULT_IM_END_TOKEN} : {txt}'
-
     def preprocess(self, x):
         img, txt = x
         img = self.img_preprocess(img, return_tensors="pt")["pixel_values"]
-        txt = [self.__add_im_tokens(t) for t in txt] if isinstance(txt, list) else self.__add_im_tokens(txt)
+        txt = [COYOWebDatasetIterable.__add_im_tokens(t) for t in txt] if isinstance(txt, list) else self.__add_im_tokens(txt)
         text_tokens = self.tokenizer(txt, return_tensors="pt", padding=True)
         return img, text_tokens
 
