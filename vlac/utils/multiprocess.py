@@ -52,7 +52,7 @@ def parallel_threads_apply_(args):
 
 
 def parallel_apply(data, func, num_proc: int = os.cpu_count(), num_thread_per_proc: int = 1, desc: str = '', concat_results: bool = True) -> list | np.ndarray:
-    chunks = np.array_split(data, min(len(data) // num_thread_per_proc, 100*num_proc))
+    chunks = np.array_split(data, min(len(data) // (8*num_thread_per_proc), 100*num_proc))
     args = [(chunk, func, num_thread_per_proc, desc, num_proc > 1) for chunk in chunks]
     with Pool(num_proc) as pool:
         results = list(tqdm(
