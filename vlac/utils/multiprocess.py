@@ -1,5 +1,12 @@
+import os
 from argparse import ArgumentParser, Namespace
+from concurrent.futures import as_completed
+from concurrent.futures.thread import ThreadPoolExecutor
 from copy import deepcopy
+from multiprocessing import Pool
+
+import numpy as np
+from tqdm import tqdm
 
 
 def add_multiprocess_args(parser: ArgumentParser, max_ntasks: int = None) -> ArgumentParser:
@@ -29,3 +36,30 @@ def remove_multiprocess_args(args: Namespace) -> Namespace:
     except AttributeError:
         pass
     return new_args
+
+
+def parallel_threads_apply(data, func, num_thread: int = os.cpu_count(), desc: str = '', disable_bar: bool = False):
+    results = []
+    with ThreadPoolExecutor(num_thread) as executor:
+        futures = [executor.submit(func, chunk) for chunk in data]
+        for future in tqdm(as_completed(futures), total=len(data), desc=desc, unit='sample', leave=False, disable=disable_bar):
+            results.append(future.result())
+    return results
+
+
+def parallel_threads_apply_(args):
+    return parallel_threads_apply(*args)
+
+
+def parallel_apply(data, func, num_proc: int = os.cpu_count(), num_thread_per_proc: int = 1, desc: str = '', concat_results: bool = True) -> list | np.ndarray:
+    chunks = np.array_split(data, min(len(data) // num_thread_per_proc, 100*num_proc))
+    args = [(chunk, func, num_thread_per_proc, desc, num_proc > 1) for chunk in chunks]
+    with Pool(num_proc) as pool:
+        results = list(tqdm(
+            pool.imap(parallel_threads_apply_, args),
+            total=len(chunks),
+            desc=desc,
+            unit='chunk',
+            disable=num_proc == 1
+        ))
+    return np.concat(results) if concat_results else results
