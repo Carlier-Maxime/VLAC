@@ -6,9 +6,7 @@ from collections import OrderedDict
 from typing import Callable, Self, Iterable
 
 import pandas as pd
-import numpy as np
 import torch.utils.data
-from torch.utils.data import Subset
 from tqdm import tqdm
 
 import vlac.dataset.webdataset as webdataset
@@ -38,8 +36,11 @@ class VLACDataset(torch.utils.data.Dataset):
         def clear(self):
             self.cache.clear()
 
-    def __init__(self, path: str, keys_read: Tuple[str, ...] = None, keys_out: Tuple[str, ...] = None, cache_max_files: int = 8, **_):
+    def __init__(self, path: str | None, keys_read: Tuple[str, ...] = None, keys_out: Tuple[str, ...] = None, cache_max_files: int = 8, **_):
         self.cache = VLACDataset.PandasParquetCache(cache_max_files)
+        self.keys_read = keys_read
+        self.keys_out = keys_out
+        if path is None: return
         info = json.load(open(os.path.join(path, "info.json")))
         self.parquet_count = info["parquet_count"]
         self.average_memory_per_parquet = info["average_memory_per_parquet"]
@@ -47,8 +48,6 @@ class VLACDataset(torch.utils.data.Dataset):
         self.max_indices_per_parquet = info["max_indices_per_parquet"]
         self.total_samples = info["total_samples"]
         self.files = sorted(glob.glob(os.path.join(path, "*.parquet")))
-        self.keys_read = keys_read
-        self.keys_out = keys_out
 
     def __len__(self):
         return self.total_samples
@@ -80,10 +79,17 @@ class VLACDataset(torch.utils.data.Dataset):
             kwargs["collate_fn"] = self.collate_fn
         return torch.utils.data.DataLoader(self, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, **kwargs)
 
-    def shard(self, nb_split: int, index_split: int):
-        ids = np.arange(self.total_samples)
-        part = self.total_samples // nb_split
-        return Subset(self, ids[part * index_split:part * (index_split + 1)])
+    def shard(self, nb_split: int, index_split: int) -> Self:
+        assert 0 < nb_split <= self.parquet_count, f"nb_split must be in range [1, {self.parquet_count}]"
+        assert 0 <= index_split < nb_split, f"index_split must be in range [0, {nb_split - 1}]"
+        subdataset = VLACDataset(None, self.keys_read, self.keys_out, max(1, self.cache.max_loaded_files // nb_split))
+        subdataset.files = self.files[index_split::nb_split]
+        subdataset.parquet_count = len(subdataset.files)
+        subdataset.average_memory_per_parquet = self.average_memory_per_parquet
+        subdataset.samples_per_parquet = self.samples_per_parquet[index_split::nb_split]
+        subdataset.max_indices_per_parquet = self.max_indices_per_parquet[index_split::nb_split]
+        subdataset.total_samples = sum(subdataset.samples_per_parquet)
+        return subdataset
 
     def map(self, map_fn: Callable[[int, pd.DataFrame, Self], pd.DataFrame | None], output_path: str, load_result: bool = False, parquet_size: int = None) -> Self | None:
         this = self
