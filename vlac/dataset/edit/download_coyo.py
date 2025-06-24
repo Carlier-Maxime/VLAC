@@ -17,12 +17,14 @@ from vlac.utils.multiprocess import parallel_apply
 
 
 class DownloadCoyoDataset(DatasetEditor):
-    def __init__(self, path: str, img_size_limit: int = 336, min_clip_sim: float = 0, keep_top: float = 1):
+    def __init__(self, path: str, img_size_limit: int = 336, min_clip_sim: float = 0, keep_top: float = 1, forbidden_domains: List[str] = None):
         super().__init__(path)
         self.img_size_limit = img_size_limit
         self.min_clip_sim = min_clip_sim
         self.keep_top = keep_top
         self.base_columns = ["id", "url", "text"]
+        self.forbidden_domains = None if forbidden_domains is None or len(forbidden_domains) == 0 else forbidden_domains
+        self.forbidden_domains_pattern = None if forbidden_domains is None else re.compile(rf"\.({'|'.join(self.forbidden_domains)})(/|$)", flags=re.IGNORECASE)
 
     @override
     def about(self, multiprocess_info: Namespace):
@@ -49,7 +51,7 @@ class DownloadCoyoDataset(DatasetEditor):
 
     def _download_img(self, url: str) -> bytes | None:
         try:
-            if re.search(r"\.(ru|рф)(/|$)", url, flags=re.IGNORECASE):
+            if self.forbidden_domains_pattern.search(url):
                 return None
             response = requests.get(url)
             response.raise_for_status()
@@ -97,6 +99,7 @@ class DownloadCoyoDataset(DatasetEditor):
             parser = argparse.ArgumentParser()
         parser.add_argument("--img_size_limit", type=int, default=336)
         parser.add_argument("--min_clip_sim", type=float, default=0.6)
+        parser.add_argument("--forbidden_domains", nargs='+', type=str, default=['ru', 'рф'])
         parser.add_argument("--keep_top", type=float, default=0.2)
         super().edit_from_args(parser, input_path, output_path)
 
