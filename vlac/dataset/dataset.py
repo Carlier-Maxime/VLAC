@@ -1,16 +1,20 @@
+import argparse
 import glob
 import json
 import os
 from collections import OrderedDict
+from typing import Callable, Self, Iterable
 
 import pandas as pd
 import numpy as np
 import torch.utils.data
 from torch.utils.data import Subset
+from tqdm import tqdm
 
 import vlac.dataset.webdataset as webdataset
 from vlac.constants import DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from vlac.dataset.config import *
+from vlac.dataset.format.format_parquets import FormatParquetsDataset
 
 
 class VLACDataset(torch.utils.data.Dataset):
@@ -51,7 +55,7 @@ class VLACDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         i, df = self.get_df_for_sample_index(index)
-        local_index = index - (1 + self.max_indices_per_parquet[i-1] if i > 0 else 0)
+        local_index = index - (1 + self.max_indices_per_parquet[i - 1] if i > 0 else 0)
         out = df.iloc[local_index]
         return out if self.keys_read is None else {self.keys_read[i] if self.keys_out is None else self.keys_out[i]: out[self.keys_read[i]] for i in range(len(self.keys_out))}
 
@@ -69,7 +73,7 @@ class VLACDataset(torch.utils.data.Dataset):
         raise ValueError(f"index {index} is probably out of range or info.json is incorrect")
 
     def collate_fn(self, x):
-        return x
+        return {k: [sample[k] for sample in x] for k in x[0].keys()}
 
     def getDataLoader(self, batch_size: int, shuffle: bool = False, num_workers: int = 0, **kwargs):
         if "collate_fn" not in kwargs.keys() or kwargs["collate_fn"] is None:
@@ -81,6 +85,30 @@ class VLACDataset(torch.utils.data.Dataset):
         part = self.total_samples // nb_split
         return Subset(self, ids[part * index_split:part * (index_split + 1)])
 
+    def map(self, map_fn: Callable[[int, pd.DataFrame, Self], pd.DataFrame | None], output_path: str, load_result: bool = False, parquet_size: int = None) -> Self | None:
+        this = self
+        parquet_size = self.average_memory_per_parquet if parquet_size is None else parquet_size
+
+        class FormatMapDataset(FormatParquetsDataset):
+            def init_step_data(self, input_path: str, parquet_size: int):
+                data = super().init_step_data(input_path, parquet_size)
+                data.i = 0
+                return data
+
+            def get_iterator(self, input_path: str, parquet_size: int) -> Iterable:
+                return tqdm(this.files, desc='map dataset', unit='parquet')
+
+            def make_df(self, data, step_data: argparse.Namespace) -> pd.DataFrame | None:
+                data = super().make_df(data, step_data)
+                data = map_fn(step_data.i, data, this)
+                step_data.i += data.shape[0]
+                return data
+
+        FormatMapDataset().format('./None', output_path, parquet_size)
+        if not load_result:
+            return None
+        return getDataset(output_path)
+
 
 class COYODataset(VLACDataset):
     def __init__(self, img_preprocess, tokenizer, **kwargs):
@@ -89,8 +117,9 @@ class COYODataset(VLACDataset):
         self.tokenizer = tokenizer
 
     def collate_fn(self, x):
-        img = self.img_preprocess([s['vision'] for s in x], return_tensors="pt")["pixel_values"]
-        txt = [s['text_tokens'] for s in x]
+        x = super().collate_fn(x)
+        img = self.img_preprocess(x['vision'], return_tensors="pt")["pixel_values"]
+        txt = x['text_tokens']
         txt = [self.__add_im_tokens(t) for t in txt] if isinstance(txt, list) else self.__add_im_tokens(txt)
         text_tokens = self.tokenizer(txt, return_tensors="pt", padding=True)
         return {
@@ -108,7 +137,7 @@ class COYOLabelsDataset(VLACDataset):
         super().__init__(COYO_LABELS_PATH, COYO_LABELS_KEYS_READ, COYO_LABELS_KEYS_OUT, **kwargs)
 
     def collate_fn(self, x):
-        return x
+        return super().collate_fn(x)
 
 
 class EmbedsDataset(VLACDataset):
@@ -116,7 +145,7 @@ class EmbedsDataset(VLACDataset):
         super().__init__(EMBEDS_PATH, EMBEDS_KEYS_READ, EMBEDS_KEYS_OUT, **kwargs)
 
     def collate_fn(self, x):
-        return x
+        return super().collate_fn(x)
 
 
 def getDataset(name: str, **kwargs) -> torch.utils.data.Dataset | VLACDataset:
@@ -124,8 +153,10 @@ def getDataset(name: str, **kwargs) -> torch.utils.data.Dataset | VLACDataset:
     if "webdataset" in name:
         return webdataset.getDataset(name, **kwargs)
     elif "coyo" in name:
-        if "labels" in name: return COYOLabelsDataset(**kwargs)
-        else: return COYODataset(**kwargs)
+        if "labels" in name:
+            return COYOLabelsDataset(**kwargs)
+        else:
+            return COYODataset(**kwargs)
     elif "embeds" in name:
         return EmbedsDataset(**kwargs)
     else:
