@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 from vlac.dataset.dataset import VLACDataset
 from vlac.dataset.format.format_parquets import FormatParquetsDataset
-from vlac.utils.args import add_multiprocess_args, check_multiprocess_args, remove_multiprocess_args
+from vlac.utils.multiprocess import add_multiprocess_args, check_multiprocess_args, remove_multiprocess_args
 
 
 class DatasetEditor(ABC):
