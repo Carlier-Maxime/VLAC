@@ -96,19 +96,12 @@ class VLACDataset(torch.utils.data.Dataset):
         parquet_size = self.average_memory_per_parquet if parquet_size is None else parquet_size
 
         class FormatMapDataset(FormatParquetsDataset):
-            def init_step_data(self, input_path: str, parquet_size: int):
-                data = super().init_step_data(input_path, parquet_size)
-                data.i = 0
-                return data
-
             def get_iterator(self, input_path: str, parquet_size: int) -> Iterable:
                 return tqdm(this.files, desc='map dataset', unit='parquet')
 
             def make_df(self, data, step_data: argparse.Namespace) -> pd.DataFrame | None:
                 data = super().make_df(data, step_data)
-                data = map_fn(data)
-                step_data.i += data.shape[0]
-                return data
+                return map_fn(data)
 
         FormatMapDataset().format('./None', output_path, parquet_size)
         if not load_result:
