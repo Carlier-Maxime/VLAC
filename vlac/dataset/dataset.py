@@ -91,7 +91,7 @@ class VLACDataset(torch.utils.data.Dataset):
         subdataset.total_samples = sum(subdataset.samples_per_parquet)
         return subdataset
 
-    def map(self, map_fn: Callable[[int, pd.DataFrame, Self], pd.DataFrame | None], output_path: str, load_result: bool = False, parquet_size: int = None) -> Self | None:
+    def map(self, map_fn: Callable[[pd.DataFrame], pd.DataFrame | None], output_path: str, load_result: bool = False, parquet_size: int = None) -> Self | None:
         this = self
         parquet_size = self.average_memory_per_parquet if parquet_size is None else parquet_size
 
@@ -106,7 +106,7 @@ class VLACDataset(torch.utils.data.Dataset):
 
             def make_df(self, data, step_data: argparse.Namespace) -> pd.DataFrame | None:
                 data = super().make_df(data, step_data)
-                data = map_fn(step_data.i, data, this)
+                data = map_fn(data)
                 step_data.i += data.shape[0]
                 return data
 
