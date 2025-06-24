@@ -71,7 +71,7 @@ class VLACDataset(torch.utils.data.Dataset):
     def collate_fn(self, x):
         return x
 
-    def getDataLoader(self, batch_size: int, shuffle: bool = True, num_workers: int = 0, **kwargs):
+    def getDataLoader(self, batch_size: int, shuffle: bool = False, num_workers: int = 0, **kwargs):
         if "collate_fn" not in kwargs.keys() or kwargs["collate_fn"] is None:
             kwargs["collate_fn"] = self.collate_fn
         return torch.utils.data.DataLoader(self, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, **kwargs)
