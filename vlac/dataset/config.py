@@ -5,7 +5,7 @@ COYO_LABELS_KEYS_READ: Tuple[str, ...] = ("id", "url", "text")
 COYO_LABELS_KEYS_OUT: Tuple[str, ...] = ("id", "url", "text")
 
 COYO_PATH: str = "/path/to/coyo"
-COYO_KEYS_READ: Tuple[str, ...] = ("png", "text")
+COYO_KEYS_READ: Tuple[str, ...] = ("img", "text")
 COYO_KEYS_OUT: Tuple[str, ...] = ("vision", "text_tokens")
 
 EMBEDS_PATH: str = "/path/to/embeds"
