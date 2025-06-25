@@ -71,7 +71,7 @@ class VLACDataset(torch.utils.data.Dataset):
 
     def get_df_for_sample_index(self, index):
         for i, max_i in enumerate(self.max_indices_per_parquet):
-            if index < max_i:
+            if index <= max_i:
                 return i, self.cache.get(self.files[i])
         raise ValueError(f"index {index} is probably out of range or info.json is incorrect")
 
