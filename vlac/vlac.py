@@ -1,8 +1,5 @@
-import os
-from typing import Union, Optional, Callable
-
-import torch
 import PIL.Image
+import torch
 from transformers import PreTrainedModel, PretrainedConfig, AutoTokenizer, AutoModelForCausalLM, AutoConfig
 
 from vlac.model.multimodal_encoder.rqvaesigliptransformer import RQVAESIGLIPTransformerConfig
