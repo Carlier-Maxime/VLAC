@@ -1,11 +1,13 @@
 import argparse
 import glob
+import io
 import json
 import os
 from collections import OrderedDict
 from typing import Callable, Self, Iterable
 
 import pandas as pd
+import PIL.Image as Image
 import torch.utils.data
 from tqdm import tqdm
 
@@ -134,9 +136,16 @@ class COYODataset(VLACDataset):
         self.img_preprocess = img_preprocess
         self.tokenizer = tokenizer
 
+    @staticmethod
+    def __open_img(img: bytes) -> Image.Image:
+        return Image.open(io.BytesIO(img)).convert("RGB")
+
+    def __open_imgs(self, imgs: list) -> list:
+        return [self.__open_img(img) if isinstance(img, bytes) else self.__open_imgs(img) for img in imgs]
+
     def collate_fn(self, x):
         x = super().collate_fn(x)
-        img = self.img_preprocess(x['vision'], return_tensors="pt")["pixel_values"]
+        img = self.img_preprocess(self.__open_imgs(x['vision']), return_tensors="pt")["pixel_values"]
         txt = x['text_tokens']
         txt = [self.__add_im_tokens(t) for t in txt] if isinstance(txt, list) else self.__add_im_tokens(txt)
         text_tokens = self.tokenizer(txt, return_tensors="pt", padding=True)
