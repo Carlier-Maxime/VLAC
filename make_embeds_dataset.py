@@ -39,7 +39,7 @@ class MakeEmbedsDataset(DatasetEditor):
         text_tokens, vision = batch["text_tokens"], batch["vision"].to(device)
         input_ids = text_tokens["input_ids"].to(device)
         attention_mask = text_tokens["attention_mask"].to(device)
-        _, _, attention_mask, _, multimodal_embeds, multimodal_tokens = self.vlac.vlm.prepare_embeds_for_multimodal(input_ids, None, attention_mask, None, input_ids, vision)
+        _, _, attention_mask, _, multimodal_embeds, multimodal_tokens = self.vlac.vlm.prepare_embeds_for_multimodal(input_ids, None, attention_mask, None, input_ids, vision, encode=False)
         ids = torch.arange(attention_mask.shape[-1], device=device).unsqueeze(0).expand(attention_mask.shape[0], -1)
         limits = torch.where(attention_mask.bool(), ids, 0).add_(1).max(dim=1)[0]
         return {
