@@ -1,85 +1,71 @@
 import argparse
 import os
+from argparse import Namespace
+from typing import List
 
 import torch
-import webdataset as wds
-from tqdm import tqdm
 
 from vlac import VLAC
-from vlac.dataset.config import COYO_LENGTH
-from vlac.dataset.dataset import COYOWebDatasetIterable
-from vlac.utils.args import add_multiprocess_args, check_multiprocess_args
+from vlac.dataset.config import COYO_PATH, EMBEDS_PATH
+from vlac.dataset.dataset import getDataset, VLACDataset
+from vlac.dataset.edit.editor import DatasetEditor
 
 
-def get_args():
-    parser = argparse.ArgumentParser(description="Make a Embeds Dataset for train encoder / decoder.")
-    parser.add_argument("--model", type=str, required=True)
-    parser.add_argument("--output_dir", type=str, required=True)
-    parser.add_argument("--batch_size", type=int, default=1)
-    parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument("--part_len", type=int, default=1000)
-    parser.add_argument("--digits_of_id", type=int, default=9)
-    parser = add_multiprocess_args(parser)
-    args = parser.parse_args()
-    return check_multiprocess_args(parser, args, COYO_LENGTH // args.part_len)
+class MakeEmbedsDataset(DatasetEditor):
+    description = "Make a Embeds Dataset for train encoder / decoder."
 
+    def __init__(self, path: str, model: str, batch_size: int, device: str, parquet_size_mb: int):
+        self.vlac = VLAC.from_pretrained(model).to(device)
+        super().__init__(path)
+        self.batch_size = batch_size
+        self.parquet_size = parquet_size_mb << 20
 
-def open_tar(start_id, args):
-    return wds.TarWriter(os.path.join(args.output_dir, f"{start_id:0{args.digits_of_id}d}_{start_id+args.part_len:0{args.digits_of_id}d}.tar"), encoder=True)
+    def open_dataset(self) -> VLACDataset:
+        return getDataset(os.path.basename(self.path), img_preprocess=self.vlac.vision_tower.image_processor, tokenizer=self.vlac.text_tokenizer)
 
+    def about(self, multiprocess_info: Namespace):
+        print(MakeEmbedsDataset.description)
 
-def pre_save(tensor):
-    return tensor.cpu().detach().clone().contiguous()
+    @staticmethod
+    def pre_save(tensor: torch.Tensor) -> torch.Tensor:
+        return tensor.cpu().detach().clone().contiguous()
 
+    def split_limit(self, tensors: torch.Tensor, limits: torch.Tensor) -> List[torch.Tensor]:
+        assert tensors.shape[0] == limits.shape[0]
+        return [self.pre_save(tensors[i, :limits[i]]) for i in range(len(limits))]
 
-def check_tar_open(args, tar: wds.TarWriter | None, count: int, end_id: int = 0):
-    start_id = (count // args.part_len) * args.part_len
-    if count >= end_id or tar is None:
-        if tar is not None: tar.close()
-        tar = open_tar(start_id, args)
-        end_id = start_id + args.part_len
-    return tar, end_id
+    def _map(self, batch: dict) -> dict | None:
+        device = self.vlac.device
+        text_tokens, vision = batch["text_tokens"], batch["vision"].to(device)
+        input_ids = text_tokens["input_ids"].to(device)
+        attention_mask = text_tokens["attention_mask"].to(device)
+        _, _, attention_mask, _, multimodal_embeds, multimodal_tokens = self.vlac.vlm.prepare_embeds_for_multimodal(input_ids, None, attention_mask, None, input_ids, vision)
+        ids = torch.arange(attention_mask.shape[-1], device=device).unsqueeze(0).expand(attention_mask.shape[0], -1)
+        limits = torch.where(attention_mask.bool(), ids, 0).add_(1).max(dim=1)[0]
+        return {
+            "mask": self.split_limit(attention_mask, limits),
+            "embeds": self.split_limit(multimodal_embeds, limits),
+            "tokens": self.split_limit(multimodal_tokens, limits)
+        }
 
+    def _edit(self, subdataset: VLACDataset, output_path: str) -> None:
+        subdataset.map_batch(
+            map_fn=self._map,
+            output_path=output_path,
+            batch_size=self.batch_size,
+            parquet_size=self.parquet_size,
+        )
 
-@torch.no_grad()
-def main():
-    args = get_args()
-    os.makedirs(args.output_dir, exist_ok=True)
-    vlac = VLAC.from_pretrained(args.model).to(args.device)
-    count = 0
-    tar = None
-    end_id = 0
-    for data in tqdm(COYOWebDatasetIterable(vlac.vision_tower.image_processor, vlac.text_tokenizer, batch_size=args.batch_size), desc='Make Embeds', unit='batch'):
-        batch_size = len(data["vision"])
-        if args.procid is not None and args.procid != ((count+batch_size-1)//args.part_len) % args.ntasks and args.procid != (count//args.part_len) % args.ntasks:
-            count += batch_size
-            continue
-        text_tokens, vision = data["text_tokens"], data["vision"].to(args.device)
-        input_ids = text_tokens["input_ids"].to(args.device)
-        attention_mask = text_tokens["attention_mask"].to(args.device)
-        _, _, attention_mask, _, multimodal_embeds, multimodal_tokens = vlac.vlm.prepare_embeds_for_multimodal(input_ids, None, attention_mask, None, input_ids, vision)
-        ids = torch.arange(attention_mask.shape[-1], device=args.device).unsqueeze(0).expand(attention_mask.shape[0], -1)
-        limits = torch.where(attention_mask.bool(), ids, 0).add_(1).max(dim=1)[0].cpu().tolist()
-        attention_mask = attention_mask.cpu().split(1)
-        multimodal_embeds = multimodal_embeds.cpu().split(1)
-        multimodal_tokens = multimodal_tokens.cpu().split(1)
-        for mask, embeds, tokens, limit in tqdm(zip(attention_mask, multimodal_embeds, multimodal_tokens, limits), desc='Save Batch', unit='sample', total=batch_size, disable=batch_size <= 128, leave=False):
-            if mask.sum() == 0:
-                continue
-            self_work = args.procid == (count // args.part_len) % args.ntasks
-            if args.procid is not None and not self_work:
-                count += 1
-                continue
-            tar, end_id = check_tar_open(args, tar, count, end_id=end_id)
-            tar.write({
-                "__key__": str(count),
-                "mask.pth": pre_save(mask[:limit]),
-                "embeds.pth": pre_save(embeds[:limit].clone()),
-                "tokens.pth": pre_save(tokens[:limit].clone())
-            })
-            count += 1
-    tar.close()
+    @classmethod
+    def edit_from_args(cls, parser: argparse.ArgumentParser = None, input_path: str = COYO_PATH, output_path: str = EMBEDS_PATH, **_):
+        if parser is None:
+            parser = argparse.ArgumentParser(description=MakeEmbedsDataset.description)
+        parser.add_argument("--model", type=str, required=True)
+        parser.add_argument("--batch_size", type=int, default=1)
+        parser.add_argument("--device", type=str, default="cuda")
+        parser.add_argument("--parquet_size_mb", type=int, default=1024, help='max size in MiB occupied by the parquet once in RAM. (used for limit size by parquet in output dataset)')
+        super().edit_from_args(parser, input_path, output_path, **_)
 
 
 if __name__ == "__main__":
-    main()
+    MakeEmbedsDataset.edit_from_args()
