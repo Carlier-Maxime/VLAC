@@ -12,6 +12,8 @@ from tqdm import tqdm
 import vlac.dataset.webdataset as webdataset
 from vlac.constants import DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
 from vlac.dataset.config import *
+from vlac.dataset.format.format import FormatDataset
+from vlac.dataset.format.format_dict import FormatDictDataset
 from vlac.dataset.format.format_parquets import FormatParquetsDataset
 
 
@@ -91,9 +93,15 @@ class VLACDataset(torch.utils.data.Dataset):
         subdataset.total_samples = sum(subdataset.samples_per_parquet)
         return subdataset
 
-    def map(self, map_fn: Callable[[pd.DataFrame], pd.DataFrame | None], output_path: str, load_result: bool = False, parquet_size: int = None) -> Self | None:
-        this = self
+    def __map(self, formatDataset: FormatDataset, output_path: str, load_result: bool = False, parquet_size: int = None) -> Self | None:
         parquet_size = self.average_memory_per_parquet if parquet_size is None else parquet_size
+        formatDataset.format('./None', output_path, parquet_size)
+        if not load_result:
+            return None
+        return getDataset(output_path)
+
+    def map_parquet(self, map_fn: Callable[[pd.DataFrame], pd.DataFrame | None], output_path: str, load_result: bool = False, parquet_size: int = None) -> Self | None:
+        this = self
 
         class FormatMapDataset(FormatParquetsDataset):
             def get_iterator(self, input_path: str, parquet_size: int) -> Iterable:
@@ -103,10 +111,21 @@ class VLACDataset(torch.utils.data.Dataset):
                 data = super().make_df(data, step_data)
                 return map_fn(data)
 
-        FormatMapDataset().format('./None', output_path, parquet_size)
-        if not load_result:
-            return None
-        return getDataset(output_path)
+        return self.__map(FormatMapDataset(), output_path, load_result, parquet_size)
+
+    def map_batch(self, map_fn: Callable[[dict], dict | None], output_path: str, batch_size: int, load_result: bool = False, parquet_size: int = None) -> Self | None:
+        this = self
+
+        class FormatMapDataset(FormatDictDataset):
+            def get_iterator(self, input_path: str, parquet_size: int) -> Iterable:
+                return tqdm(this.getDataLoader(batch_size=batch_size), desc='map dataset', unit='batch')
+
+            def make_df(self, data, step_data: argparse.Namespace) -> pd.DataFrame | None:
+                batch_out = map_fn(data)
+                outs = [{k: batch_out[k][i] for k in batch_out.keys()} for i in range(batch_size)]
+                return super().make_df(outs, step_data)
+
+        return self.__map(FormatMapDataset(), output_path, load_result, parquet_size)
 
 
 class COYODataset(VLACDataset):

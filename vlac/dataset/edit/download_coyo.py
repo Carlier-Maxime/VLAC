@@ -83,7 +83,7 @@ class DownloadCoyoDataset(DatasetEditor):
 
     @override
     def _edit(self, subdataset: VLACDataset, output_path: str) -> None:
-        subdataset.map(
+        subdataset.map_parquet(
             self.__map,
             output_path=output_path,
             load_result=False
