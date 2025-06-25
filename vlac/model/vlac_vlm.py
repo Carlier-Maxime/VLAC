@@ -64,14 +64,16 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             past_key_values,
             labels,
             images,
+            encode: bool = True
     ):
         if images is None or input_ids.shape[1] == 1:
+            input_embeds = self.vlac.text_embeds(input_ids).to(self.encoder.dtype)
             return (
                 None,
                 position_ids,
                 attention_mask,
                 past_key_values,
-                self.encoder(self.vlac.text_embeds(input_ids).to(self.encoder.dtype)),
+                self.encoder(input_embeds) if encode else input_embeds,
                 labels,
             )
 
@@ -81,7 +83,8 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             images = images.flatten(0, 1)
 
         image_features, tokens = self.vlac.encode_images(images)
-        image_features = self.encoder(self.vlac.project_img_features(image_features).to(self.llm.device))
+        image_features = self.vlac.project_img_features(image_features).to(self.llm.device)
+        if encode: image_features = self.encoder(image_features)
         tokens = tokens.to(self.llm.device).flatten(1, -2)
 
         _labels = labels
@@ -99,7 +102,8 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
         input_ids_copy = input_ids.clone()
         img_token_mask = input_ids_copy == IMAGE_TOKEN_INDEX
         input_ids_copy[img_token_mask] = 0
-        input_embeds = self.encoder(self.vlac.text_embeds(input_ids_copy).to(image_features.dtype))
+        input_embeds = self.vlac.text_embeds(input_ids_copy).to(image_features.dtype)
+        if encode: input_embeds = self.encoder(input_embeds)
 
         B, N, D = input_embeds.shape
         im_seq_len = image_features.shape[1]
