@@ -25,10 +25,6 @@ class CheckCoyoDataset(DatasetEditor):
     def about(self, multiprocess_info: Namespace):
         print(f"Check COYO with clip_sim>{self.min_clip_sim}, IMG_SIZE_LIMIT={self.img_size_limit}, forbidden_domains={self.forbidden_domains} ")
 
-    @override
-    def preprocess_dataset(self, dataset: VLACDataset) -> VLACDataset:
-        return dataset
-
     def _check_domain(self, url: str) -> bool:
         return True if self.forbidden_domains is None else not bool(self.forbidden_domains_pattern.search(url))
 

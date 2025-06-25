@@ -19,14 +19,14 @@ from vlac.utils.multiprocess import add_multiprocess_args, check_multiprocess_ar
 class DatasetEditor(ABC):
     def __init__(self, path: str):
         self.path = path
-        self.dataset = VLACDataset(path)
+        self.dataset = self.open_dataset()
 
     @abc.abstractmethod
     def about(self, multiprocess_info: Namespace):
         pass
 
-    def preprocess_dataset(self, dataset: VLACDataset) -> VLACDataset:
-        return dataset
+    def open_dataset(self) -> VLACDataset:
+        return VLACDataset(self.path)
 
     @abc.abstractmethod
     def _edit(self, subdataset: VLACDataset, output_path: str) -> None:

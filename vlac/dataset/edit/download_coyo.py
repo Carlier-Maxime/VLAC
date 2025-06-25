@@ -37,10 +37,6 @@ class DownloadCoyoDataset(DatasetEditor):
     def __contain_keys(df: pd.DataFrame, keys: List[str]) -> bool:
         return all([key in df.keys() for key in keys])
 
-    @override
-    def preprocess_dataset(self, dataset: VLACDataset) -> VLACDataset:
-        return dataset
-
     def __tweak_column(self, df: pd.DataFrame, base_columns: List[str]):
         assert self.__contain_keys(df, base_columns)
         clip_bases = ["clip_sim", "clip_similarity_vitb32", "clip_similarity_vitl14"]
