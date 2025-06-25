@@ -1,5 +1,6 @@
 import argparse
 import os
+import io
 from argparse import Namespace
 from typing import List
 
@@ -27,10 +28,12 @@ class MakeEmbedsDataset(DatasetEditor):
         print(MakeEmbedsDataset.description)
 
     @staticmethod
-    def pre_save(tensor: torch.Tensor) -> torch.Tensor:
-        return tensor.cpu().detach().clone().contiguous()
+    def pre_save(tensor: torch.Tensor) -> bytes:
+        data = io.BytesIO()
+        torch.save(tensor.cpu().detach().clone().contiguous(), data)
+        return data.getvalue()
 
-    def split_limit(self, tensors: torch.Tensor, limits: torch.Tensor) -> List[torch.Tensor]:
+    def split_limit(self, tensors: torch.Tensor, limits: torch.Tensor) -> List[bytes]:
         assert tensors.shape[0] == limits.shape[0]
         return [self.pre_save(tensors[i, :limits[i]]) for i in range(len(limits))]
 
@@ -43,9 +46,9 @@ class MakeEmbedsDataset(DatasetEditor):
         ids = torch.arange(attention_mask.shape[-1], device=device).unsqueeze(0).expand(attention_mask.shape[0], -1)
         limits = torch.where(attention_mask.bool(), ids, 0).add_(1).max(dim=1)[0]
         return {
-            "mask": self.split_limit(attention_mask, limits),
-            "embeds": self.split_limit(multimodal_embeds, limits),
-            "tokens": self.split_limit(multimodal_tokens, limits)
+            "mask.pth": self.split_limit(attention_mask, limits),
+            "embeds.pth": self.split_limit(multimodal_embeds, limits),
+            "tokens.pth": self.split_limit(multimodal_tokens, limits)
         }
 
     def _edit(self, subdataset: VLACDataset, output_path: str) -> None:
