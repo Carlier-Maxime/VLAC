@@ -124,7 +124,7 @@ class VLACDataset(torch.utils.data.Dataset):
 
             def make_df(self, data, step_data: argparse.Namespace) -> pd.DataFrame | None:
                 batch_out = map_fn(data)
-                outs = [{k: batch_out[k][i] for k in batch_out.keys()} for i in range(batch_size)]
+                outs = [{k: batch_out[k][i] for k in batch_out.keys()} for i in range(list(batch_out.values())[0].__len__())]
                 return super().make_df(outs, step_data)
 
         return self.__map(FormatMapDataset(), output_path, load_result, parquet_size)
