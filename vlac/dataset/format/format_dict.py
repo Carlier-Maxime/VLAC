@@ -12,7 +12,11 @@ class FormatDictDataset(FormatDataset, ABC):
         return argparse.Namespace(parquet_size=parquet_size, part=[], part_mem=0)
 
     def make_df(self, data, step_data: argparse.Namespace) -> pd.DataFrame | None:
-        step_data.part.append(data)
+        if isinstance(data, dict): step_data.part.append(data)
+        elif isinstance(data, list):
+            if isinstance(data[0], dict): step_data.part.extend(data)
+            else: raise ValueError(f"Invalid list content - Expected list of dictionaries but found list of {type(data[0]).__name__}")
+        else: raise ValueError(f"Invalid data type - Expected dict or list of dicts but found {type(data).__name__}")
         step_data.part_mem += asizeof.asizeof(data)
         if step_data.part_mem < step_data.parquet_size: return None
         df = pd.DataFrame(step_data.part)
