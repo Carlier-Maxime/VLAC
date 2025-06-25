@@ -1,16 +1,11 @@
 from typing import cast, Tuple
 
-from torch.nn.utils.rnn import pad_sequence
 from transformers import HfArgumentParser
 
 from vlac import VLACConfig, VLAC
 from vlac.dataset.dataset import getDataset
 from vlac.train.args import ModelArguments, DataArguments, TrainingArguments
 from vlac.train.trainer import getTrainerCls
-
-
-def collate_fn(batch):
-    return {key: pad_sequence([data[key][0] for data in batch], batch_first=True).contiguous() for key in batch[0].keys()}
 
 
 def train():
@@ -34,7 +29,7 @@ def train():
 
     for param in vlac.llm.parameters():
         param.requires_grad = False
-    trainer = getTrainerCls(training_args.trainer_type)(model=vlac, train_dataset=train_dataset, args=training_args, data_collator=collate_fn)
+    trainer = getTrainerCls(training_args.trainer_type)(model=vlac, train_dataset=train_dataset, args=training_args, data_collator=dataset.collate_fn)
     trainer.train()
 
 
