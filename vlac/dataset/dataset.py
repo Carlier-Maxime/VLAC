@@ -10,6 +10,7 @@ import pandas as pd
 import PIL.Image as Image
 import torch.utils.data
 from tqdm import tqdm
+from torch.nn.utils.rnn import pad_sequence
 
 import vlac.dataset.webdataset as webdataset
 from vlac.constants import DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
@@ -188,7 +189,8 @@ class EmbedsDataset(VLACDataset):
         super().__init__(EMBEDS_PATH, EMBEDS_KEYS_READ, EMBEDS_KEYS_OUT, **kwargs)
 
     def collate_fn(self, x):
-        return super().collate_fn(x)
+        x = super().collate_fn(x)
+        return {k: pad_sequence(v, batch_first=True).contiguous() for k, v in x.items()}
 
 
 def getDataset(name: str, **kwargs) -> torch.utils.data.Dataset | VLACDataset:
