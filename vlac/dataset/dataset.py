@@ -4,7 +4,7 @@ import io
 import json
 import os
 from collections import OrderedDict
-from typing import Callable, Self, Iterable
+from typing import Callable, Self, Iterable, Any
 
 import pandas as pd
 import PIL.Image as Image
@@ -56,11 +56,27 @@ class VLACDataset(torch.utils.data.Dataset):
     def __len__(self):
         return self.total_samples
 
+    IMG_KEYS = ['img', 'picture', 'image'] + [ext.lower() for ext in Image.OPEN.keys()]
+    TENSOR_KEYS = ['tensor', 'tensors', 'pth', 'safetensors']
+    TENSOR_EXTENSIONS = ('.pt', '.safetensors', '.pth')
+
+    def __decode_data(self, key: str, value: Any) -> Any:
+        key = key.lower()
+        if isinstance(value, bytes):
+            data = io.BytesIO(value)
+            if key in self.IMG_KEYS or key.endswith(tuple(Image.EXTENSION.keys())): return Image.open(data).convert("RGB")
+            if key in self.TENSOR_KEYS or key.endswith(self.TENSOR_EXTENSIONS): return torch.load(data)
+        return value
+
     def __getitem__(self, index):
         i, df = self.get_df_for_sample_index(index)
         local_index = index - (1 + self.max_indices_per_parquet[i - 1] if i > 0 else 0)
         out = df.iloc[local_index]
-        return out if self.keys_read is None else {self.keys_read[i] if self.keys_out is None else self.keys_out[i]: out[self.keys_read[i]] for i in range(len(self.keys_out))}
+        if self.keys_read is None:
+            if self.keys_out is None: return {k: self.__decode_data(k, v) for k, v in out}
+            return {ko: self.__decode_data(k, v) for (k, v), ko in zip(out, self.keys_out)}
+        if self.keys_out is None: return {k: self.__decode_data(k, out[k]) for k in self.keys_read}
+        return {ko: self.__decode_data(kr, out[kr]) for kr, ko in zip(self.keys_read, self.keys_out)}
 
     def __next__(self):
         raise NotImplementedError
@@ -145,7 +161,7 @@ class COYODataset(VLACDataset):
 
     def collate_fn(self, x):
         x = super().collate_fn(x)
-        img = self.img_preprocess(self.__open_imgs(x['vision']), return_tensors="pt")["pixel_values"]
+        img = self.img_preprocess(x['vision'], return_tensors="pt")["pixel_values"]
         txt = x['text_tokens']
         txt = [self.__add_im_tokens(t) for t in txt] if isinstance(txt, list) else self.__add_im_tokens(txt)
         text_tokens = self.tokenizer(txt, return_tensors="pt", padding=True)
