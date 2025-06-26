@@ -1,9 +1,8 @@
 import json
+import os
 from typing import List
 
 from safetensors.torch import safe_open
-
-from vlac.vlac import *
 
 
 def load_weights_of_keys_start_with(path: str, start: str | List[str]):
