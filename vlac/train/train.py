@@ -14,7 +14,7 @@ def train():
     model_args, data_args, training_args = cast(Tuple[ModelArguments, DataArguments, TrainingArguments], parser.parse_args_into_dataclasses())
 
     if "EncodeDecode" in training_args.trainer_type:
-        model = VLACEncodeDecode(PretrainedConfig.from_pretrained(model_args.model_name_or_path))
+        model = VLACEncodeDecode(model_args.model_name_or_path, PretrainedConfig.from_pretrained(model_args.model_name_or_path))
     else:
         model = PreTrainedModel.from_pretrained(model_args.model_name_or_path)
     model.to("cuda")
