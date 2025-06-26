@@ -50,7 +50,7 @@ class FormatDataset(ABC):
             info["parquet_count"] += 1
         return info
 
-    def resume(self, resume_path: str, parquet_size: int) -> int:
+    def resume(self, resume_path: str, parquet_size: int) -> dict | None:
         assert os.path.isdir(resume_path), 'path must be a directory if it already exists.'
         nb_files = len(os.listdir(resume_path))
         if nb_files > 0:
@@ -73,14 +73,14 @@ class FormatDataset(ABC):
                 else:
                     raise RuntimeError(f"Resume cannot be done, info invalid and the info backup cannot be used because the number of parquet files is less than the number of parquet files in the info_backup.json file.", e)
                 self.assert_info(info_path, parquet_size, parquets)
-            return json.load(open(info_path))["total_samples"]
-        return 0
+            return json.load(open(info_path))
+        return None
 
     def format(self, input_path: str, output_path: str, parquet_size: int):
         assert os.path.abspath(input_path) != os.path.abspath(output_path), 'the input and output path must be not the same.'
-        resume_samples = 0
+        resume_info = None
         if os.path.exists(output_path):
-            resume_samples = self.resume(output_path, parquet_size)
+            resume_info = self.resume(output_path, parquet_size)
         else: os.makedirs(output_path)
 
         part_df_mem = 0
@@ -89,7 +89,12 @@ class FormatDataset(ABC):
         i = 1
         save_paths = []
         iterator = self.get_iterator(input_path, parquet_size)
-        if resume_samples > 0: iterator = self.resume_to_samples(iterator, resume_samples)
+        if resume_info is not None:
+            sizes = resume_info["samples_per_parquet"]
+            save_paths = sorted(glob.glob(os.path.join(output_path, "*.parquet")))
+            i += resume_info["parquet_count"]
+            assert i-1 == len(save_paths)
+            iterator = self.resume_to_samples(iterator, resume_info["total_samples"])
         step_data = self.init_step_data(input_path, parquet_size)
         for data in iterator:
             df = self.make_df(data, step_data)

@@ -26,6 +26,17 @@ class FormatTarsToParquetsDataset(FormatDictDataset):
         data['id'] = id_
         return super().make_df(data, step_data)
 
+    def resume_to_samples(self, iterator: Iterable, resume_samples: int) -> Iterable:
+        iterator = iter(iterator)
+        i = 0
+        bar = tqdm(total=resume_samples, desc=f'resume to samples {resume_samples}', unit='samples')
+        while i < resume_samples:
+            next(iterator)
+            bar.update(1)
+            i += 1
+        bar.close()
+        return iterator
+
 
 if __name__ == "__main__":
     FormatTarsToParquetsDataset.format_from_args()

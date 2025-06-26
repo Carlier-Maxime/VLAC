@@ -9,6 +9,7 @@ from typing import Callable, Self, Iterable, Any
 import pandas as pd
 import PIL.Image as Image
 import torch.utils.data
+from torch.utils.data import Subset
 from tqdm import tqdm
 from torch.nn.utils.rnn import pad_sequence
 
@@ -143,6 +144,9 @@ class VLACDataset(torch.utils.data.Dataset):
                 batch_out = map_fn(data)
                 outs = [{k: batch_out[k][i] for k in batch_out.keys()} for i in range(list(batch_out.values())[0].__len__())]
                 return super().make_df(outs, step_data)
+
+            def resume_to_samples(self, iterator: Iterable, resume_samples: int) -> Iterable:
+                return tqdm(torch.utils.data.DataLoader(Subset(this, range(resume_samples, len(this), 1)), batch_size=batch_size, shuffle=False, collate_fn=this.collate_fn), desc='map dataset', unit='batch')
 
         return self.__map(FormatMapDataset(), output_path, load_result, parquet_size)
 
