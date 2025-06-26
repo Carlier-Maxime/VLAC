@@ -40,8 +40,8 @@ class EncodeDecodeTrainer(Trainer):
         self.mse = nn.MSELoss()
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        embeds = inputs["embeds"]
-        return self.mse(embeds, model(embeds))
+        embeds = inputs["embeds"].to(model.device).to(torch.float)
+        return self.mse(embeds, model(embeds)).to(torch.float)
 
 
 def getTrainerCls(name: str) -> type[Trainer]:
