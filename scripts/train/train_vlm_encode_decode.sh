@@ -7,6 +7,7 @@ torchrun --nproc_per_node=1 --master_port=25001 \
     -m vlac.train.train \
     --version v1 \
     --trainer_type EncodeDecodeTrainer \
+    --model_name_or_path ./vlac_base \
     --data_mixture embeds \
     --chunk_sampler True \
     --bf16 True \

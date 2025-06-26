@@ -7,9 +7,8 @@ from vlac.model.utils import load_weights_of_keys_start_with
 
 
 class VLACEncodeDecode(nn.Module):
-    def __init__(self, path, **kwargs):
+    def __init__(self, cfg, **kwargs):
         super().__init__(**kwargs)
-        cfg = AutoConfig.from_pretrained(path)
         llm_cfg = AutoConfig.from_pretrained(cfg.llm_type)
         enc = "vlm.encoder"
         dec = "vlm.decoder"

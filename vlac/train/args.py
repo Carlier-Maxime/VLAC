@@ -16,7 +16,7 @@ class DataArguments:
 @dataclass
 class ModelArguments:
     version: Optional[str] = field(default="v0")
-    name_or_path: Optional[str] = field(default=None)
+    model_name_or_path: Optional[str] = field(default=None, metadata={"required": True})
     config_file: Optional[str] = field(default="./configs/config.json")
     mm_use_im_start_end: bool = field(default=False)
     mm_use_vi_start_end: bool = field(default=False)
