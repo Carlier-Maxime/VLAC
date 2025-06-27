@@ -37,9 +37,12 @@ def load_weights_of_keys_start_with(path: str, start: str | List[str]) -> dict:
             f = files[v]
             add_tensor(f, k, local_start)
     else:
-        files = glob.glob(os.path.join(path, "*.safetensors"))
-        assert len(files) == 1, f"if not index.json must be one safetensors file found in {path}."
-        f = safe_open(files[0], framework="pt", device="cpu")
+        if path.endswith(".safetensors"):
+            f = safe_open(path, framework="pt", device="cpu")
+        else:
+            files = glob.glob(os.path.join(path, "*.safetensors"))
+            assert len(files) == 1, f"if not index.json must be one safetensors file found in {path}."
+            f = safe_open(files[0], framework="pt", device="cpu")
         for k in f.keys():
             local_start = get_local_start(k)
             if local_start is None: continue
