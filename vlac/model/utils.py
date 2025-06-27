@@ -6,7 +6,7 @@ from typing import List
 from safetensors.torch import safe_open
 
 
-def load_weights_of_keys_start_with(path: str, start: str | List[str]) -> dict:
+def load_weights_of_keys_startswith(path: str, start: str | List[str]) -> dict:
     start_islist = isinstance(start, List)
     states = {k: {} for k in start} if start_islist else {start: {}}
     index_path = os.path.join(path, "model.safetensors.index.json")
