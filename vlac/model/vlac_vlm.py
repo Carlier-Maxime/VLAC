@@ -56,12 +56,11 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
     def lm_head(self):
         return self.vlac.llm.lm_head
 
-    def prepare_embeds_for_multimodal(
+    def prepare_for_multimodal(
             self,
             input_ids,
             position_ids,
             attention_mask,
-            past_key_values,
             labels,
             images,
             encode: bool = True
@@ -72,7 +71,6 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
                 None,
                 position_ids,
                 attention_mask,
-                past_key_values,
                 self.encoder(input_embeds) if encode else input_embeds,
                 labels,
             )
@@ -161,7 +159,6 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             None,
             position_ids,
             attention_mask,
-            past_key_values,
             new_input_embeds,
             new_labels,
         )
@@ -193,7 +190,7 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             gen_image = input_ids[:, -1].eq(self.IM_START_TOKEN_INDEX).any()
             if input_ids[:, -1].eq(self.IM_END_TOKEN_INDEX).any():
                 raise RuntimeError("TODO : make image")
-            input_ids, position_ids, attention_mask, past_key_values, inputs_embeds, labels = self.prepare_embeds_for_multimodal(input_ids, position_ids, attention_mask, past_key_values, labels, None)
+            input_ids, position_ids, attention_mask, inputs_embeds, labels = self.prepare_for_multimodal(input_ids, position_ids, attention_mask, labels, None)
             inputs_embeds = inputs_embeds.to(self.start_embeds.dtype)
 
         outputs = self.llm.model(

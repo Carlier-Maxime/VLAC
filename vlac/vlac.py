@@ -93,7 +93,7 @@ class VLAC(PreTrainedModel):
         input_ids = inputs["input_ids"]
         attention_mask = inputs["attention_mask"]
         images = self.prepare_images(vision)
-        _, _, attention_mask, _, multimodal_embeds, multimodal_tokens = self.vlm.prepare_embeds_for_multimodal(input_ids, None, attention_mask, None, input_ids, images)
+        _, _, attention_mask, _, multimodal_embeds, multimodal_tokens = self.vlm.prepare_for_multimodal(input_ids, None, attention_mask, input_ids, images)
         return multimodal_tokens, multimodal_embeds, attention_mask
 
     def prepare_images(self, images):
