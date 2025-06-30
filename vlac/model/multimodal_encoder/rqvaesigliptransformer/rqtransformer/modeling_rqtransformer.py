@@ -143,7 +143,7 @@ class RQTransformer(PreTrainedModel):
 
         return head_outputs
 
-    def generate(self, embed_from_body, model_aux=None, cfg=3.0):
+    def generate(self, embed_from_body, model_aux=None):
         generate_idx = 1
         B, seq_len, _ = embed_from_body.shape
         embed_from_body = self.in_mlp_2(embed_from_body.to(torch.float32))

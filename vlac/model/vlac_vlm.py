@@ -179,8 +179,7 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             output_hidden_states: Optional[bool] = None,
             return_dict: Optional[bool] = None,
             seqlens_in_batch: Optional[torch.LongTensor] = None,
-            image_ids=None,
-            cfg=None,
+            image_ids=None
     ):
         if image_ids is None:
             image_ids = []
@@ -212,7 +211,7 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
         hidden_states = outputs.last_hidden_state
         if gen_image:
             self.vlac.vision_tower.rqtransformer.eval()
-            image_hidden_state, code = self.vlac.vision_tower.rqtransformer.generate(self.decoder(hidden_states[:, -1]).to(torch.float).to(self.vlac.vision_tower.device), self.vlac.vision_tower.rqvaesiglip, cfg)
+            image_hidden_state, code = self.vlac.vision_tower.rqtransformer.generate(self.decoder(hidden_states[:, -1]).to(torch.float).to(self.vlac.vision_tower.device), self.vlac.vision_tower.rqvaesiglip)
             image_hidden_state = self.vlac.mm_projector(image_hidden_state)
             hidden_states[:, -1] = image_hidden_state
             image_ids.append(code)
