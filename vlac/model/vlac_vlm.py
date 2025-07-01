@@ -4,6 +4,7 @@ from typing import Optional, List
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from transformers import PreTrainedModel, PretrainedConfig, AutoModelForCausalLM, GenerationMixin
 from transformers.modeling_outputs import CausalLMOutputWithPast
 
@@ -36,8 +37,6 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             self.llm.lm_head = nn.Linear(self.config.hidden_size, self.config.vocab_size, bias=False).to(self.lm_head.weight.device).to(self.lm_head.weight.dtype)
         self.config.is_decoder = True
         self.config.is_encoder_decoder = False
-        self.start_embeds = None
-        self.start_pos_ids = None
         self.IM_START_TOKEN_INDEX = self.vlac.text_tokenizer.convert_tokens_to_ids(DEFAULT_IM_START_TOKEN)
         self.IM_END_TOKEN_INDEX = self.vlac.text_tokenizer.convert_tokens_to_ids(DEFAULT_IM_END_TOKEN)
         mm_conf = MultimodalProjectorConfig(self.vlac.config.project_multimodal_type)
@@ -170,9 +169,6 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
     ):
         if image_ids is None:
             image_ids = []
-        if inputs_embeds is not None:
-            self.start_embeds = inputs_embeds
-            self.start_pos_ids = position_ids
         gen_image = False
         if input_ids is not None:
             if inputs_embeds is not None:
@@ -181,7 +177,7 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             if input_ids[:, -1].eq(self.IM_END_TOKEN_INDEX).any():
                 raise RuntimeError("TODO : make image")
             input_ids, position_ids, attention_mask, inputs_embeds, labels = self.prepare_for_multimodal(input_ids, position_ids, attention_mask, labels, None)
-            inputs_embeds = inputs_embeds.to(self.start_embeds.dtype)
+            inputs_embeds = inputs_embeds
 
         outputs = self.llm.model(
             input_ids=input_ids,
@@ -196,14 +192,17 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             seqlens_in_batch=seqlens_in_batch
         )
         hidden_states = outputs.last_hidden_state
+
         if gen_image:
             self.vlac.vision_tower.rqtransformer.eval()
             image_hidden_state, code = self.vlac.vision_tower.rqtransformer.generate(self.decoder(hidden_states[:, -1]).to(torch.float).to(self.vlac.vision_tower.device), self.vlac.vision_tower.rqvaesiglip)
             image_hidden_state = self.vlac.mm_projector(image_hidden_state)
             hidden_states[:, -1] = image_hidden_state
             image_ids.append(code)
-        loss = None
+
         logits = self.lm_head(hidden_states).float()
+        loss = None if labels is None else F.cross_entropy(logits, labels)
+
         return CausalLMOutputWithPast(
             loss=loss,
             logits=logits,
@@ -216,6 +215,7 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
         return self.lm_head
 
     def set_output_embeddings(self, new_embeddings):
-        self.lm_head = new_embeddings
+        self.vlac.llm.lm_head = new_embeddings
+
 
 AutoModelForCausalLM.register(VLACVLMConfig, VLACForCausalLM)
