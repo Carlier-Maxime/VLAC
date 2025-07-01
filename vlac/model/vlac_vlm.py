@@ -85,18 +85,6 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
         if encode: image_features = self.encoder(image_features)
         tokens = tokens.to(self.llm.device).flatten(1, -2)
 
-        _labels = labels
-        _position_ids = position_ids
-        _attention_mask = attention_mask
-
-        attention_mask = torch.ones_like(input_ids, dtype=torch.bool) if attention_mask is None else attention_mask.bool()
-
-        if position_ids is None:
-            position_ids = torch.arange(0, input_ids.shape[1], dtype=torch.long, device=input_ids.device)
-
-        if labels is None:
-            labels = torch.full_like(input_ids, IGNORE_INDEX)
-
         input_ids_copy = input_ids.clone()
         img_token_mask = input_ids_copy == IMAGE_TOKEN_INDEX
         input_ids_copy[img_token_mask] = 0
@@ -129,36 +117,38 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
         counts = im_mask.sum(dim=1).add_(N).unsqueeze(-1)
         ids = torch.arange(W, device=counts.device)[None].expand(B, -1)
         new_attention_mask = ids.lt(counts)
-        position_ids = torch.zeros((B, W), dtype=position_ids.dtype, device=position_ids.device)
-        position_ids[new_attention_mask] = ids[new_attention_mask]
+        if position_ids is not None:
+            position_ids = torch.zeros((B, W), dtype=position_ids.dtype, device=position_ids.device)
+            position_ids[new_attention_mask] = ids[new_attention_mask]
         text_mask = new_attention_mask & ~im_mask
-        new_attention_mask[text_mask] = attention_mask.flatten()
+        if attention_mask is not None:
+            new_attention_mask = new_attention_mask.to(dtype=attention_mask.dtype)
+            new_attention_mask[text_mask] = attention_mask.flatten()
+        else:
+            new_attention_mask = None
 
         new_input_embeds = input_embeds.new_empty((B, W, D))
         new_input_embeds[im_mask] = image_features.flatten(0, 1)
         new_input_embeds[text_mask] = input_embeds.flatten(0, 1)
-        new_labels = labels.new_empty((B, W, tokens.shape[-1]))
-        new_labels[im_mask] = tokens.flatten(0, 1)
-        new_labels[text_mask] = labels.flatten().unsqueeze(-1).expand(-1, tokens.shape[-1])
+        if labels is not None:
+            new_labels = labels.new_empty((B, W, tokens.shape[-1]))
+            new_labels[im_mask] = tokens.flatten(0, 1)
+            new_labels[text_mask] = labels.flatten().unsqueeze(-1).expand(-1, tokens.shape[-1])
+        else:
+            new_labels = None
 
         tokenizer_model_max_length = getattr(self.llm.config, "tokenizer_model_max_length", None)
         if tokenizer_model_max_length is not None and W > tokenizer_model_max_length:
             warnings.warn("Inputs truncated!")
             new_input_embeds = new_input_embeds[:, :tokenizer_model_max_length]
-            new_labels = new_labels[:, :tokenizer_model_max_length]
-
-        if _labels is None:
-            new_labels = None
-
-        attention_mask = None if _attention_mask is None else new_attention_mask.to(dtype=_attention_mask.dtype)
-
-        if _position_ids is None:
-            position_ids = None
+            if labels is not None: new_labels = new_labels[:, :tokenizer_model_max_length]
+            if attention_mask is not None: new_attention_mask = new_attention_mask[:, :tokenizer_model_max_length]
+            if position_ids is not None: position_ids = position_ids[:, :tokenizer_model_max_length]
 
         return (
             None,
             position_ids,
-            attention_mask,
+            new_attention_mask,
             new_input_embeds,
             new_labels,
         )
