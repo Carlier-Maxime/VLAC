@@ -3,8 +3,50 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import Trainer
 
+from vlac import VLAC
 
-class VLACTrainer(Trainer):
+
+class LLMTrainer(Trainer):
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        text_tokens = inputs["text_tokens"]
+        vision = inputs["vision"].to(torch.bfloat16)
+        model = model.module if hasattr(model, "module") else model
+        input_ids = text_tokens['input_ids'].to(model.llm.device)
+        input_ids, position_ids, attention_mask, input_embeds, labels = model.vlm.prepare_for_multimodal(
+            input_ids,
+            None,
+            text_tokens['attention_mask'].to(model.llm.device),
+            input_ids,
+            vision,
+            encode=True
+        )
+        out_lm = model.vlm(
+            input_ids=input_ids,
+            position_ids=position_ids,
+            attention_mask=attention_mask,
+            inputs_embeds=input_embeds,
+            labels=labels
+        )
+        loss = out_lm.loss
+        outputs = {
+            "text_tokens": text_tokens,
+            "out_lm": out_lm,
+        }
+        return (loss, outputs) if return_outputs else loss
+
+    def create_optimizer(self):
+        if isinstance(self.model, VLAC):
+            for param in self.model.parameters():
+                param.requires_grad = False
+            for param in self.model.llm.parameters():
+                param.requires_grad = True
+            print("INFO : model is a VLAC, only the LLM will be trained !")
+        else:
+            print("WARNING : model is not a VLAC, no parameter will be frozen !")
+        return super().create_optimizer()
+
+
+class VisionTowerTrainer(Trainer):
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         text_tokens = inputs["text_tokens"]
         vision = inputs["vision"].to(torch.bfloat16)
@@ -46,8 +88,10 @@ class EncodeDecodeTrainer(Trainer):
 
 def getTrainerCls(name: str) -> type[Trainer]:
     name = name.lower()
-    if "vlac" in name:
-        return VLACTrainer
+    if "llm" in name or "vlm" in name or "vlac" in name:
+        return LLMTrainer
+    elif "visiontower" in name:
+        return VisionTowerTrainer
     elif "encodedecode" in name:
         return EncodeDecodeTrainer
     else:
