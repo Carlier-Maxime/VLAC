@@ -1,6 +1,6 @@
 from typing import cast, Tuple
 
-from transformers import HfArgumentParser, PretrainedConfig, PreTrainedModel
+from transformers import HfArgumentParser, PretrainedConfig, AutoModelForCausalLM
 
 from vlac import VLAC
 from vlac.dataset.dataset import getDataset
@@ -16,7 +16,7 @@ def train():
     if "EncodeDecode" in training_args.trainer_type:
         model = VLACEncodeDecode(model_args.model_name_or_path, PretrainedConfig.from_pretrained(model_args.model_name_or_path))
     else:
-        model = PreTrainedModel.from_pretrained(model_args.model_name_or_path)
+        model = AutoModelForCausalLM.from_pretrained(model_args.model_name_or_path)
     model.to("cuda")
     dataset_args = {
         'img_preprocess': model.vision_tower.image_processor,
