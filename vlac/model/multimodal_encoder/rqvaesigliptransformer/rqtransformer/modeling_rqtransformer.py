@@ -143,9 +143,10 @@ class RQTransformer(PreTrainedModel):
 
         return head_outputs
 
-    def generate(self, embed_from_body, model_aux=None):
+    def generate(self, embed_from_body, model_aux=None, return_logits=False):
         generate_idx = 1
         B, seq_len, _ = embed_from_body.shape
+        D = self.pos_emb_d.shape[1]
         embed_from_body = self.in_mlp_2(embed_from_body.to(torch.float32))
 
         depth_ctx_full = embed_from_body.view(B, seq_len, 1, -1)
@@ -155,11 +156,11 @@ class RQTransformer(PreTrainedModel):
         head_outputs = self.head_transformer(depth_ctx_full)
         head_outputs = head_outputs.reshape(B * seq_len, -1)
 
-        logits = self.classifier_mlp(head_outputs)
-        code = sample_from_logits(logits, temperature=1.0, top_p=0.96, top_k=900)
-        code = code.reshape(B, seq_len, 1).repeat(1, 1, self.pos_emb_d.shape[1])
+        all_logits = [self.classifier_mlp(head_outputs)]
+        code = sample_from_logits(all_logits[-1], temperature=1.0, top_p=0.96, top_k=900)
+        code = code.reshape(B, seq_len, 1).repeat(1, 1, D)
 
-        for i in range(self.pos_emb_d.shape[1] - 1):
+        for i in range(D - 1):
             generate_idx += 1
             depth_ctx = self.embed_with_model_aux(code, model_aux)
             depth_ctx = torch.cumsum(depth_ctx, dim=-2)[:, :, :i + 1, :]
@@ -182,14 +183,16 @@ class RQTransformer(PreTrainedModel):
             head_outputs = head_outputs[:, -1, :]
 
             logits = self.classifier_mlp(head_outputs)
-            code_generate = sample_from_logits(logits, temperature=1.0, top_p=0.96, top_k=900)
+            if return_logits: all_logits.append(logits)
+            else: all_logits = [logits]
+            code_generate = sample_from_logits(all_logits[-1], temperature=1.0, top_p=0.96, top_k=900)
             code_generate = code_generate.reshape(B, seq_len)
             code[:, :, i + 1] = code_generate
 
         out_features = self.embed_with_model_aux(code, model_aux)
         out_features = torch.cumsum(out_features, dim=-2)[:, :, -1, :]
 
-        return out_features, code
+        return (out_features, code, torch.stack(all_logits).view(D, B, seq_len, -1).permute(1, 2, 0, 3)) if return_logits else (out_features, code)
 
 
 AutoConfig.register("rqtransformer_model", RQTransformerConfig)
