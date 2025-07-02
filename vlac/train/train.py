@@ -24,9 +24,17 @@ def train():
     } if isinstance(model, VLAC) else {}
     dataset = getDataset(data_args.data_mixture, **dataset_args)
     train_dataset = dataset
+    resume = training_args.resume_from_checkpoint
+    if resume is not None and isinstance(resume, str):
+        res = resume.lower()
+        if res == "none": resume = None
+        elif res == "true": resume = True
+        elif res == "false": resume = False
+        else: res = None
+        if res is not None: training_args.resume_from_checkpoint = resume
 
     trainer = getTrainerCls(training_args.trainer_type)(model=model, train_dataset=train_dataset, args=training_args, data_collator=dataset.collate_fn)
-    trainer.train()
+    trainer.train(resume_from_checkpoint=resume)
 
 
 if __name__ == "__main__":
