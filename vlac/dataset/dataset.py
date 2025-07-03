@@ -3,7 +3,6 @@ import glob
 import io
 import json
 import os
-from collections import OrderedDict
 from typing import Callable, Self, Iterable, Any
 
 import pandas as pd
@@ -19,31 +18,12 @@ from vlac.dataset.config import *
 from vlac.dataset.format.format import FormatDataset
 from vlac.dataset.format.format_dict import FormatDictDataset
 from vlac.dataset.format.format_parquets import FormatParquetsDataset
+from vlac.utils.cache import PandasParquetCache
 
 
 class VLACDataset(torch.utils.data.Dataset):
-    class PandasParquetCache:
-        def __init__(self, max_loaded_files: int):
-            self.max_loaded_files = max_loaded_files
-            self.cache = OrderedDict()  # filepath -> pd.DataFrame
-
-        def get(self, filepath):
-            if filepath in self.cache:
-                self.cache.move_to_end(filepath)
-                return self.cache[filepath]
-
-            if len(self.cache) >= self.max_loaded_files:
-                self.cache.popitem(last=False)
-
-            df = pd.read_parquet(filepath)
-            self.cache[filepath] = df
-            return df
-
-        def clear(self):
-            self.cache.clear()
-
     def __init__(self, path: str | None, keys_read: Tuple[str, ...] = None, keys_out: Tuple[str, ...] = None, cache_max_files: int = 8, **_):
-        self.cache = VLACDataset.PandasParquetCache(cache_max_files)
+        self.cache = PandasParquetCache(cache_max_files)
         self.keys_read = keys_read
         self.keys_out = keys_out
         if path is None: return
@@ -104,7 +84,7 @@ class VLACDataset(torch.utils.data.Dataset):
     def shard(self, nb_split: int, index_split: int) -> Self:
         assert 0 < nb_split <= self.parquet_count, f"nb_split must be in range [1, {self.parquet_count}]"
         assert 0 <= index_split < nb_split, f"index_split must be in range [0, {nb_split - 1}]"
-        subdataset = VLACDataset(None, self.keys_read, self.keys_out, max(1, self.cache.max_loaded_files // nb_split))
+        subdataset = VLACDataset(None, self.keys_read, self.keys_out, max(1, self.cache.max_elements // nb_split))
         subdataset.files = self.files[index_split::nb_split]
         subdataset.parquet_count = len(subdataset.files)
         subdataset.average_memory_per_parquet = self.average_memory_per_parquet
