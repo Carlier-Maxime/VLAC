@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
+_pp = "_per_parquet"
+
 
 class FormatDataset(ABC):
     def __init__(self, **_):
@@ -36,16 +38,16 @@ class FormatDataset(ABC):
     def assert_info(info_path: str, parquet_size: int, parquets: List[str]):
         info = json.load(open(info_path))
         assert info["parquet_count"] == len(parquets), f'the number of parquet files ({len(parquets)}) mismatch with info.json ({info["parquet_count"]}).'
-        assert info["average_memory_per_parquet"] == parquet_size, f'the average memory occupied per parquet ({info["average_memory_per_parquet"]}) mismatch with parquet_size given ({parquet_size}).'
-        assert info["total_samples"] == sum(info["samples_per_parquet"]), f'the total number of samples ({info["total_samples"]}) mismatch with the samples per parquet {info["samples_per_parquet"]}.'
-        assert info["max_indices_per_parquet"] == (np.array(info["samples_per_parquet"]).cumsum() - 1).tolist(), f'the maximum indices per parquet {info["max_indices_per_parquet"]} mismatch with samples per parquet {info["samples_per_parquet"]}.'
+        assert info[f"average_memory{_pp}"] == parquet_size, f'the average memory occupied per parquet ({info[f"average_memory{_pp}"]}) mismatch with parquet_size given ({parquet_size}).'
+        assert info["total_samples"] == sum(info[f"samples{_pp}"]), f'the total number of samples ({info["total_samples"]}) mismatch with the samples per parquet {info[f"samples{_pp}"]}.'
+        assert info[f"max_indices{_pp}"] == (np.array(info[f"samples{_pp}"]).cumsum() - 1).tolist(), f'the maximum indices per parquet {info[f"max_indices{_pp}"]} mismatch with samples per parquet {info[f"samples{_pp}"]}.'
 
     @staticmethod
     def complete_missing_info(info: dict, parquets_missing: List[str]) -> dict:
         for parquet in tqdm(parquets_missing, desc='complete missing info', unit='parquet'):
             df = pd.read_parquet(parquet)
-            info["samples_per_parquet"].append(df.shape[0])
-            info["max_indices_per_parquet"].append(info["max_indices_per_parquet"][-1] + df.shape[0])
+            info[f"samples{_pp}"].append(df.shape[0])
+            info[f"max_indices{_pp}"].append(info[f"max_indices{_pp}"][-1] + df.shape[0])
             info["total_samples"] += df.shape[0]
             info["parquet_count"] += 1
         return info
@@ -90,7 +92,7 @@ class FormatDataset(ABC):
         save_paths = []
         iterator = self.get_iterator(input_path, parquet_size)
         if resume_info is not None:
-            sizes = resume_info["samples_per_parquet"]
+            sizes = resume_info[f"samples{_pp}"]
             save_paths = sorted(glob.glob(os.path.join(output_path, "*.parquet")))
             i += resume_info["parquet_count"]
             assert i-1 == len(save_paths)
@@ -135,9 +137,9 @@ class FormatDataset(ABC):
             os.rename(out_path, backup_path)
         json.dump({
             "parquet_count": len(sizes),
-            "average_memory_per_parquet": parquet_size,
-            "samples_per_parquet": sizes,
-            "max_indices_per_parquet": (np.array(sizes).cumsum() - 1).tolist(),
+            f"average_memory{_pp}": parquet_size,
+            f"samples{_pp}": sizes,
+            f"max_indices{_pp}": (np.array(sizes).cumsum() - 1).tolist(),
             "total_samples": sum(sizes)
         }, open(out_path, "w"), indent=None, separators=(',', ':'))
         if os.path.exists(backup_path):
