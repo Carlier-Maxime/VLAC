@@ -87,12 +87,13 @@ class FormatDataset(ABC):
 
         part_df_mem = 0
         part_df: List[pd.DataFrame] = []
-        sizes = []
+        infos_pp = {}
         i = 1
         save_paths = []
         iterator = self.get_iterator(input_path, parquet_size)
         if resume_info is not None:
-            sizes = resume_info[f"samples{_pp}"]
+            for k, v in resume_info.items():
+                if k.endswith(_pp): infos_pp[k[:-len(_pp)]] = v
             save_paths = sorted(glob.glob(os.path.join(output_path, "*.parquet")))
             i += resume_info["parquet_count"]
             assert i-1 == len(save_paths)
@@ -105,9 +106,11 @@ class FormatDataset(ABC):
             part_df_mem += part_df[-1].memory_usage(deep=True).sum()
             while part_df_mem >= parquet_size:
                 df = part_df[0] if len(part_df) == 1 else pd.concat(part_df)
-                residual_df, saved_df_len = FormatDataset.save_parquet(df, FormatDataset.out_path(output_path, i, save_paths), parquet_size)
-                sizes.append(saved_df_len)
-                self.save_info(output_path, sizes, parquet_size)
+                residual_df, infos = self.save_parquet(df, FormatDataset.out_path(output_path, i, save_paths), parquet_size)
+                for k, v in infos.items():
+                    if k not in infos_pp: infos_pp[k] = []
+                    infos_pp[k].append(v)
+                self.save_info(output_path, infos_pp, parquet_size)
                 part_df_mem = residual_df.memory_usage(deep=True).sum()
                 part_df = [residual_df]
                 i += 1
@@ -115,33 +118,36 @@ class FormatDataset(ABC):
         if df is not None: part_df.append(df)
         df = part_df[0] if len(part_df) == 1 else pd.concat(part_df)
         if df.shape[0] > 0:
-            residual_df, saved_df_len = FormatDataset.save_parquet(df, FormatDataset.out_path(output_path, i, save_paths), parquet_size)
+            residual_df, infos = self.save_parquet(df, FormatDataset.out_path(output_path, i, save_paths), parquet_size)
+            for k, v in infos.items():
+                if k not in infos_pp: infos_pp[k] = []
+                infos_pp[k].append(v)
             assert residual_df.shape[0] == 0
-            sizes.append(saved_df_len)
         else:
             i -= 1
 
         digits = len(str(len(save_paths)))
-        i = len(sizes)
         for path in tqdm(save_paths, desc='Rename parquet files', unit='file'):
             splitext = os.path.splitext(os.path.basename(path))
             os.rename(path, os.path.join(output_path, f"{int(splitext[0]):0{digits}d}-of-{i:0{digits}d}{splitext[1]}"))
 
-        self.save_info(output_path, sizes, parquet_size)
+        self.save_info(output_path, infos_pp, parquet_size)
 
     @staticmethod
-    def save_info(output_dir: str, sizes: List[int], parquet_size: int):
+    def save_info(output_dir: str, infos_pp: dict, parquet_size: int):
         out_path = os.path.join(output_dir, "info.json")
         backup_path = os.path.join(output_dir, "info_backup.json")
         if os.path.exists(out_path):
             os.rename(out_path, backup_path)
-        json.dump({
-            "parquet_count": len(sizes),
+        info = {
+            "parquet_count": len(infos_pp["samples"]),
             f"average_memory{_pp}": parquet_size,
-            f"samples{_pp}": sizes,
-            f"max_indices{_pp}": (np.array(sizes).cumsum() - 1).tolist(),
-            "total_samples": sum(sizes)
-        }, open(out_path, "w"), indent=None, separators=(',', ':'))
+            f"max_indices{_pp}": (np.array(infos_pp["samples"]).cumsum() - 1).tolist(),
+        }
+        for k, v in infos_pp.items():
+            info[f'{k}{_pp}'] = v
+            info[f'total_{k}'] = sum(v)
+        json.dump(info, open(out_path, "w"), indent=None, separators=(',', ':'))
         if os.path.exists(backup_path):
             os.remove(backup_path)
 
@@ -152,15 +158,19 @@ class FormatDataset(ABC):
             save_paths.append(path)
         return path
 
-    @staticmethod
-    def save_parquet(df: pd.DataFrame, output_path: str, parquet_size: int) -> Tuple[pd.DataFrame, int]:
+    def get_infos_of_parquet(self, df: pd.DataFrame) -> dict:
+        return {
+            "samples": df.shape[0]
+        }
+
+    def save_parquet(self, df: pd.DataFrame, output_path: str, parquet_size: int) -> Tuple[pd.DataFrame, dict]:
         mem = df.memory_usage(deep=True).sum()
         limit = int(df.shape[0] * (parquet_size / mem)) if mem > parquet_size else df.shape[0]
         save_df = df.iloc[:limit]
-        save_df_len = save_df.shape[0]
+        infos = self.get_infos_of_parquet(save_df)
         save_df.to_parquet(output_path)
         df = df.iloc[limit:]
-        return df, save_df_len
+        return df, infos
 
     @abstractmethod
     def init_step_data(self, input_path: str, parquet_size: int) -> argparse.Namespace:

@@ -91,6 +91,11 @@ class FormatMinerlDataset(FormatDictDataset):
             unit = 'it'
         return tqdm(base_iter[resume_samples:], desc=desc, unit=unit)
 
+    def get_infos_of_parquet(self, df: pd.DataFrame) -> dict:
+        infos = super().get_infos_of_parquet(df)
+        infos['frames'] = int(df['vid_len'].sum())
+        return infos
+
 
 if __name__ == "__main__":
     FormatMinerlDataset.format_from_args()
