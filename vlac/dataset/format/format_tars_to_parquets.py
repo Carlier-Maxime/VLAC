@@ -11,7 +11,7 @@ from vlac.dataset.format.format_dict import FormatDictDataset
 
 class FormatTarsToParquetsDataset(FormatDictDataset):
     def get_iterator(self, input_path: str, parquet_size: int) -> Iterable:
-        tars = glob.glob(f'{input_path}/*.tar')
+        tars = sorted(glob.glob(f'{input_path}/*.tar'))
         if len(tars) == 0:
             raise ValueError(f'no tar files found in {input_path}')
         return tqdm(wds.WebDataset(tars), desc='format webdataset to parquets files', unit='samples')
