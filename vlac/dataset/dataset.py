@@ -175,6 +175,18 @@ class EmbedsDataset(VLACDataset):
         return {k: pad_sequence(v, batch_first=True).contiguous() for k, v in x.items()}
 
 
+class MinerlDataset(VLACDataset):
+    def __init__(self, img_preprocess, tokenizer, history_len: int, **kwargs):
+        super().__init__(MINERL_PATH, MINERL_KEYS_READ, MINERL_KEYS_OUT, **kwargs)
+        self.img_preprocess = img_preprocess
+        self.tokenizer = tokenizer
+        self.history_len = history_len
+
+    def __getitem__(self, index):
+        item = super()[index]
+        return item
+
+
 def getDataset(name: str, **kwargs) -> torch.utils.data.Dataset | VLACDataset:
     name = name.lower()
     if "webdataset" in name:
@@ -186,5 +198,7 @@ def getDataset(name: str, **kwargs) -> torch.utils.data.Dataset | VLACDataset:
             return COYODataset(**kwargs)
     elif "embeds" in name:
         return EmbedsDataset(**kwargs)
+    elif "minerl" in name:
+        return MinerlDataset(**kwargs)
     else:
         raise ValueError(f"Unknown dataset name: {name}")
