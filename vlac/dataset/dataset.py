@@ -28,11 +28,9 @@ class VLACDataset(torch.utils.data.Dataset):
         self.keys_out = keys_out
         if path is None: return
         info = json.load(open(os.path.join(path, "info.json")))
-        self.parquet_count = info["parquet_count"]
-        self.average_memory_per_parquet = info["average_memory_per_parquet"]
-        self.samples_per_parquet = info["samples_per_parquet"]
-        self.max_indices_per_parquet = info["max_indices_per_parquet"]
-        self.total_samples = info["total_samples"]
+        for key, value in info.items():
+            setattr(self, key, value)
+        assert all(hasattr(self, key) for key in ["parquet_count", "samples_per_parquet", "max_indices_per_parquet", "total_samples", "average_memory_per_parquet"])
         self.files = sorted(glob.glob(os.path.join(path, "*.parquet")))
 
     def __len__(self):
