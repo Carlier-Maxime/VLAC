@@ -62,4 +62,4 @@ def parallel_apply(data, func, num_proc: int = os.cpu_count(), num_thread_per_pr
             unit='chunk',
             disable=num_proc == 1
         ))
-    return np.concat(results) if concat_results else results
+    return np.concatenate(results) if concat_results else results
