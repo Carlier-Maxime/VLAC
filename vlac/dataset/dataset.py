@@ -19,6 +19,7 @@ from vlac.dataset.format.format import FormatDataset
 from vlac.dataset.format.format_dict import FormatDictDataset
 from vlac.dataset.format.format_parquets import FormatParquetsDataset
 from vlac.utils.cache import PandasParquetCache
+from vlac.video import VideoReader
 
 
 class VLACDataset(torch.utils.data.Dataset):
@@ -39,6 +40,8 @@ class VLACDataset(torch.utils.data.Dataset):
     IMG_KEYS = ['img', 'picture', 'image'] + [ext.lower() for ext in Image.OPEN.keys()]
     TENSOR_KEYS = ['tensor', 'tensors', 'pth', 'safetensors']
     TENSOR_EXTENSIONS = ('.pt', '.safetensors', '.pth')
+    VIDEO_KEYS = ['video', 'vid']
+    VIDEO_EXTENSIONS = ('.mp4', '.webm', '.mkv', '.mov')
 
     def __decode_data(self, key: str, value: Any) -> Any:
         key = key.lower()
@@ -46,6 +49,7 @@ class VLACDataset(torch.utils.data.Dataset):
             data = io.BytesIO(value)
             if key in self.IMG_KEYS or key.endswith(tuple(Image.EXTENSION.keys())): return Image.open(data).convert("RGB")
             if key in self.TENSOR_KEYS or key.endswith(self.TENSOR_EXTENSIONS): return torch.load(data)
+            if key in self.VIDEO_KEYS or key.endswith(self.VIDEO_EXTENSIONS): return VideoReader(data)
         return value
 
     def __getitem__(self, index):
@@ -183,7 +187,7 @@ class MinerlDataset(VLACDataset):
         self.history_len = history_len
 
     def __getitem__(self, index):
-        item = super()[index]
+        item = super().__getitem__(index)
         return item
 
 
