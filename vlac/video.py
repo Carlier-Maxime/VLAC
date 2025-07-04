@@ -77,9 +77,16 @@ class VideoReader:
             self.process.stderr.close()
             self.process.wait()
             self.process = None
-        if self.fd:
-            os.close(self.fd)
-            self.fd = None
+        if getattr(self, "_using_memfd", False):
+            try:
+                os.close(self.fd)
+            except Exception:
+                pass
+        else:
+            try:
+                os.unlink(self.memfd_path)
+            except Exception:
+                pass
 
     def __del__(self):
         self.close()
