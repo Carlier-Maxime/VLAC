@@ -18,7 +18,7 @@ class FormatParquetsDataset(FormatDataset):
         return argparse.Namespace()
 
     def get_iterator(self, input_path: str, parquet_size: int) -> Iterable:
-        return tqdm(glob.glob(os.path.join(input_path, "*.parquet")), desc=self.default_desc)
+        return tqdm(glob.glob(os.path.join(input_path, "**/*.parquet"), recursive=True), desc=self.default_desc)
 
     def make_df(self, data, step_data: argparse.Namespace) -> pd.DataFrame | None:
         path = data
