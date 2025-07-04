@@ -116,8 +116,8 @@ class FormatDataset(ABC):
                 i += 1
         df = self.make_last_df(step_data)
         if df is not None: part_df.append(df)
-        df = part_df[0] if len(part_df) == 1 else pd.concat(part_df)
-        if df.shape[0] > 0:
+        df = None if len(part_df) == 0 else part_df[0] if len(part_df) == 1 else pd.concat(part_df)
+        if df is not None and df.shape[0] > 0:
             residual_df, infos = self.save_parquet(df, FormatDataset.out_path(output_path, i, save_paths), parquet_size)
             for k, v in infos.items():
                 if k not in infos_pp: infos_pp[k] = []
