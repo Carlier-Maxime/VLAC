@@ -1,12 +1,12 @@
-import json
 import os
 import argparse
-from typing import Iterable, List
+from typing import Iterable
 
 import pandas as pd
 from tqdm import tqdm
 import cv2
 
+from vlac.dataset.dataset import VLACDataset
 from vlac.dataset.format.format_dict import FormatDictDataset
 
 
@@ -38,16 +38,6 @@ class FormatMinerlDataset(FormatDictDataset):
             nb_frames += 1
         return nb_frames
 
-    @staticmethod
-    def read_jsonl(path) -> List[dict]:
-        lines = []
-        with open(path, 'r') as f:
-            for line in f.readlines():
-                if line is None: break
-                if line.strip() == "": continue
-                lines.append(json.loads(line))
-        return lines
-
     def make_df(self, data, step_data: argparse.Namespace) -> pd.DataFrame | None:
         vid_path = f'{self.base_path}/{data}.mp4'
         cap = cv2.VideoCapture(vid_path)
@@ -58,7 +48,7 @@ class FormatMinerlDataset(FormatDictDataset):
         if not os.path.exists(jsonl_path):
             print(f"WARNING: {data}.jsonl not found, skipping it.")
             return None
-        infos = self.read_jsonl(jsonl_path)
+        infos = VLACDataset.read_jsonl(jsonl_path)
         vid_len = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         fps = cap.get(cv2.CAP_PROP_FPS)
         vid_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
