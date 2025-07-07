@@ -3,14 +3,16 @@ import glob
 import io
 import json
 import os
-from typing import Callable, Self, Iterable, Any
+from pathlib import Path
+from typing import Callable, Self, Iterable, Any, List, Union, IO
 
-import pandas as pd
 import PIL.Image as Image
+import numpy as np
+import pandas as pd
 import torch.utils.data
+from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Subset
 from tqdm import tqdm
-from torch.nn.utils.rnn import pad_sequence
 
 import vlac.dataset.webdataset as webdataset
 from vlac.constants import DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
@@ -31,7 +33,7 @@ class VLACDataset(torch.utils.data.Dataset):
         info = json.load(open(os.path.join(path, "info.json")))
         for key, value in info.items():
             setattr(self, key, value)
-        assert all(hasattr(self, key) for key in ["parquet_count", "samples_per_parquet", "max_indices_per_parquet", "total_samples", "average_memory_per_parquet"])
+        assert all(hasattr(self, key) for key in ["parquet_count", "samples_per_parquet", "max_indices_per_parquet", "total_samples", "average_memory_per_parquet"]), 'missing keys in info.json !'
         self.files = sorted(glob.glob(os.path.join(path, "*.parquet")))
 
     def __len__(self):
@@ -43,6 +45,21 @@ class VLACDataset(torch.utils.data.Dataset):
     VIDEO_KEYS = ['video', 'vid']
     VIDEO_EXTENSIONS = ('.mp4', '.webm', '.mkv', '.mov')
 
+    @staticmethod
+    def read_jsonl(input_data: Union[str, bytes, Path, IO]) -> list[dict]:
+        if hasattr(input_data, 'read'):
+            lines = input_data.readlines()
+        elif isinstance(input_data, (str, Path)) and Path(input_data).exists():
+            with open(input_data, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+        elif isinstance(input_data, str):
+            lines = input_data.splitlines()
+        elif isinstance(input_data, bytes):
+            lines = io.StringIO(input_data.decode('utf-8')).readlines()
+        else:
+            raise TypeError("Unsupported input type: must be str, bytes, Path or file-like object.")
+        return [json.loads(line) for line in lines if line.strip()]
+
     def __decode_data(self, key: str, value: Any) -> Any:
         key = key.lower()
         if isinstance(value, bytes):
@@ -50,17 +67,20 @@ class VLACDataset(torch.utils.data.Dataset):
             if key in self.IMG_KEYS or key.endswith(tuple(Image.EXTENSION.keys())): return Image.open(data).convert("RGB")
             if key in self.TENSOR_KEYS or key.endswith(self.TENSOR_EXTENSIONS): return torch.load(data)
             if key in self.VIDEO_KEYS or key.endswith(self.VIDEO_EXTENSIONS): return VideoReader(data)
+            if key.endswith(".jsonl"): return self.read_jsonl(data)
         return value
 
-    def __getitem__(self, index):
-        i, df = self.get_df_for_sample_index(index)
-        local_index = index - (1 + self.max_indices_per_parquet[i - 1] if i > 0 else 0)
-        out = df.iloc[local_index]
+    def map_keys(self, out):
         if self.keys_read is None:
             if self.keys_out is None: return {k: self.__decode_data(k, v) for k, v in out}
             return {ko: self.__decode_data(k, v) for (k, v), ko in zip(out, self.keys_out)}
         if self.keys_out is None: return {k: self.__decode_data(k, out[k]) for k in self.keys_read}
         return {ko: self.__decode_data(kr, out[kr]) for kr, ko in zip(self.keys_read, self.keys_out)}
+
+    def __getitem__(self, index):
+        i, df = self._get_df_for_sample_index(index)
+        local_index = self._get_relative_index(index, i, self.max_indices_per_parquet)
+        return self.map_keys(df.iloc[local_index])
 
     def __next__(self):
         raise NotImplementedError
@@ -69,11 +89,20 @@ class VLACDataset(torch.utils.data.Dataset):
         for i in range(self.total_samples):
             yield self[i]
 
-    def get_df_for_sample_index(self, index):
-        for i, max_i in enumerate(self.max_indices_per_parquet):
-            if index <= max_i:
-                return i, self.cache.get(self.files[i])
-        raise ValueError(f"index {index} is probably out of range or info.json is incorrect")
+    @staticmethod
+    def _get_index_of(global_index, mi_pp) -> int:
+        for i, max_i in enumerate(mi_pp):
+            if global_index <= max_i:
+                return i
+        raise ValueError(f"index {global_index} is probably out of range or info.json is incorrect")
+
+    def _get_df_for_sample_index(self, index) -> Tuple[int, pd.DataFrame]:
+        i = self._get_index_of(index, self.max_indices_per_parquet)
+        return i, self.cache.get(self.files[i])
+
+    @staticmethod
+    def _get_relative_index(global_index, unit_index, max_indices_per_unit):
+        return global_index - (1 + max_indices_per_unit[unit_index - 1] if unit_index > 0 else 0)
 
     def collate_fn(self, x):
         return {k: [sample[k] for sample in x] for k in x[0].keys()}
@@ -182,13 +211,43 @@ class EmbedsDataset(VLACDataset):
 class MinerlDataset(VLACDataset):
     def __init__(self, img_preprocess, tokenizer, history_len: int, **kwargs):
         super().__init__(MINERL_PATH, MINERL_KEYS_READ, MINERL_KEYS_OUT, **kwargs)
+        assert all([hasattr(self, name) for name in [f"frames_per_parquet", "total_frames"]]), 'missing keys in info.json !'
         self.img_preprocess = img_preprocess
         self.tokenizer = tokenizer
         self.history_len = history_len
+        self.length = self.total_frames - self.total_samples
+        self.max_indices_per_parquet = ((np.array(self.frames_per_parquet) - np.array(self.samples_per_parquet)).cumsum() - 1).tolist()
+
+    def __len__(self):
+        return self.length
+
+    def __make_history(self, data, last_view_index):
+        imgs = []
+        start_hist = (last_view_index - self.history_len) + 1
+        if start_hist < 0: start_hist = 0
+        end_hist = last_view_index + 1
+        for i in range(start_hist, ):
+            try:
+                imgs.append(data['video'][i])
+            except StopIteration:
+                break
+        infos = data['infos'][start_hist:end_hist]
+        return {
+            'state_hist': infos,
+            'view_hist': imgs
+        }
 
     def __getitem__(self, index):
-        item = super().__getitem__(index)
-        return item
+        i, df = self._get_df_for_sample_index(index)
+        df_frame_index = self._get_relative_index(index, i, self.max_indices_per_parquet)
+        max_indices_per_samples = (df['vid_len'].to_numpy() - 1).cumsum() - 1
+        local_index = self._get_index_of(df_frame_index, max_indices_per_samples)
+        data = self.map_keys(df.iloc[local_index])
+        vid_frame_index = self._get_relative_index(df_frame_index, local_index, max_indices_per_samples)
+        res = self.__make_history(data, vid_frame_index)
+        res['fps'] = data['fps']
+        res['task'] = data['task']
+        return res
 
 
 def getDataset(name: str, **kwargs) -> torch.utils.data.Dataset | VLACDataset:
