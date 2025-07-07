@@ -9,7 +9,7 @@ import torch
 
 
 class VideoReader:
-    def __init__(self, video_bytes: Union[bytes, io.BytesIO], width: int = None, height: int = None):
+    def __init__(self, video_bytes: Union[bytes, io.BytesIO], width: int = None, height: int = None, cache: bool = True):
         self.video_bytes = video_bytes if isinstance(video_bytes, bytes) else video_bytes.read()
         self.__to_memfd()
 
@@ -26,6 +26,9 @@ class VideoReader:
             .output('pipe:1', format='rawvideo', pix_fmt='rgb24')
             .run_async(pipe_stdin=False, pipe_stdout=True, pipe_stderr=True)
         )
+
+        self.is_cached = cache
+        self.cached_frames = []
 
     def __to_memfd(self):
         try:
@@ -69,7 +72,15 @@ class VideoReader:
             self.close()
             raise StopIteration
         frame = np.frombuffer(in_bytes, np.uint8).copy().reshape((self.height, self.width, 3))
-        return torch.from_numpy(frame).permute(2, 0, 1)
+        frame = torch.from_numpy(frame).permute(2, 0, 1)
+        if self.is_cached: self.cached_frames.append(frame)
+        return frame
+
+    def __getitem__(self, idx):
+        if not self.is_cached: raise Exception("Video is not cached, get item is not allowed")
+        while idx >= len(self.cached_frames):
+            _ = next(self)
+        return self.cached_frames[idx]
 
     def close(self):
         if self.process:
