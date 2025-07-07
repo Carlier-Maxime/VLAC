@@ -22,6 +22,7 @@ def train():
         'img_preprocess': model.vision_tower.image_processor,
         'tokenizer': model.text_tokenizer
     } if isinstance(model, VLAC) else {}
+    if "minerl" in data_args.data_mixture.lower(): dataset_args['history_len'] = 8
     dataset = getDataset(data_args.data_mixture, **dataset_args)
     train_dataset = dataset
     resume = training_args.resume_from_checkpoint
