@@ -13,15 +13,18 @@ import torch.utils.data
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Subset
 from tqdm import tqdm
+from transformers import BatchEncoding
 
 import vlac.dataset.webdataset as webdataset
-from vlac.constants import DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN
+from vlac.constants import DEFAULT_IM_START_TOKEN, DEFAULT_IM_END_TOKEN, IGNORE_INDEX
 from vlac.dataset.config import *
 from vlac.dataset.format.format import FormatDataset
 from vlac.dataset.format.format_dict import FormatDictDataset
 from vlac.dataset.format.format_parquets import FormatParquetsDataset
 from vlac.utils.cache import PandasParquetCache
 from vlac.video import VideoReader
+
+IM_START_END = f"{DEFAULT_IM_START_TOKEN}{DEFAULT_IM_END_TOKEN}"
 
 
 class VLACDataset(torch.utils.data.Dataset):
@@ -209,7 +212,7 @@ class EmbedsDataset(VLACDataset):
 
 
 class MinerlDataset(VLACDataset):
-    def __init__(self, img_preprocess, tokenizer, history_len: int, **kwargs):
+    def __init__(self, img_preprocess, tokenizer, history_len: int, use_prompt_format: bool = False, **kwargs):
         super().__init__(MINERL_PATH, MINERL_KEYS_READ, MINERL_KEYS_OUT, **kwargs)
         assert all([hasattr(self, name) for name in [f"frames_per_parquet", "total_frames"]]), 'missing keys in info.json !'
         self.img_preprocess = img_preprocess
@@ -217,6 +220,7 @@ class MinerlDataset(VLACDataset):
         self.history_len = history_len
         self.length = self.total_frames - self.total_samples
         self.max_indices_per_parquet = ((np.array(self.frames_per_parquet) - np.array(self.samples_per_parquet)).cumsum() - 1).tolist()
+        self.use_prompt_format = use_prompt_format
 
     def __len__(self):
         return self.length
@@ -226,15 +230,32 @@ class MinerlDataset(VLACDataset):
         start_hist = (last_view_index - self.history_len) + 1
         if start_hist < 0: start_hist = 0
         end_hist = last_view_index + 1
-        for i in range(start_hist, ):
+        for i in range(start_hist, end_hist):
             try:
                 imgs.append(data['video'][i])
             except StopIteration:
                 break
-        infos = data['infos'][start_hist:end_hist]
+        infos = data['infos'][start_hist:end_hist - 1]
+        target_info = data['infos'][end_hist - 1]
+        target_img = data['video'][end_hist]
+        if not self.use_prompt_format:
+            return {
+                'state_hist': infos,
+                'view_hist': imgs,
+                'target_view': target_img,
+                'target_state': target_info
+            }
+        prompt_in = (f"Task: {'Unknown' if data['task'] is None else data['task']}\n\n"
+                     f"History (from the past to the present): \n"
+                     f"{'\n'.join([f'=> {IM_START_END} => {info}' for info in infos])}\n"
+                     f"=> {IM_START_END} => ?\n\n")
+        prompt_out = (f"Predicted View:\n{IM_START_END}\n\n"
+                      f"Predicted State: {target_info}")
+        imgs.append(target_img)
         return {
-            'state_hist': infos,
-            'view_hist': imgs
+            'prompt_in': prompt_in,
+            'prompt_out': prompt_out,
+            'imgs': imgs
         }
 
     def __getitem__(self, index):
@@ -248,6 +269,24 @@ class MinerlDataset(VLACDataset):
         res['fps'] = data['fps']
         res['task'] = data['task']
         return res
+
+    def collate_fn(self, x):
+        x = super().collate_fn(x)
+        if not self.use_prompt_format: return x
+        img = self.img_preprocess(x['imgs'], return_tensors="pt")["pixel_values"]
+        text_tokens_in = self.tokenizer(x['prompt_in'], return_tensors="pt", padding=True)
+        text_tokens_out = self.tokenizer(x['prompt_out'], return_tensors="pt", padding=True)
+        text_tokens = BatchEncoding({
+            k: torch.cat([text_tokens_in[k], text_tokens_out[k]], dim=1)
+            for k in text_tokens_in.keys()
+        })
+        labels = text_tokens['input_ids'].clone()
+        labels[:, :text_tokens_in['input_ids'].shape[-1]] = IGNORE_INDEX
+        return {
+            'vision': img,
+            'text_tokens': text_tokens,
+            'labels': labels
+        }
 
 
 def getDataset(name: str, **kwargs) -> torch.utils.data.Dataset | VLACDataset:
