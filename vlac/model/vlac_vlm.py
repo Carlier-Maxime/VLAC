@@ -110,7 +110,7 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
         decals = torch.arange(0, counts.max(), im_seq_len, device=counts.device)[None].expand(B, -1)
         decals = decals[decals < counts]
         im_ids0 = im_ids[:, 0].unsqueeze(1).expand(-1, im_seq_len).flatten()
-        im_ids1 = im_ids[:, 1].add_(decals).unsqueeze(1).add(torch.arange(im_seq_len, device=im_ids.device)[None]).flatten()
+        im_ids1 = im_ids[:, 1].add(decals).unsqueeze(1).add(torch.arange(im_seq_len, device=im_ids.device)[None]).flatten()
         im_mask = torch.zeros((B, W), dtype=torch.bool, device=decals.device)
         im_mask[[im_ids0, im_ids1]] = True
 
@@ -134,6 +134,10 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             new_labels = labels.new_empty((B, W, tokens.shape[-1]))
             new_labels[im_mask] = tokens.flatten(0, 1)
             new_labels[text_mask] = labels.flatten().unsqueeze(-1).expand(-1, tokens.shape[-1])
+            im_ignore = labels[im_ids[:, 0], im_ids[:, 1]].eq(IGNORE_INDEX)
+            im_ignore_mask = im_mask.clone()
+            im_ignore_mask[im_mask] = im_ignore[:, None].expand(-1, 256).flatten()
+            new_labels[im_ignore_mask] = IGNORE_INDEX
         else:
             new_labels = None
 
