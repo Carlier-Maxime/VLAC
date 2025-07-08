@@ -16,7 +16,7 @@ class LLMTrainer(Trainer):
             input_ids,
             None,
             text_tokens['attention_mask'].to(model.llm.device),
-            input_ids,
+            inputs['labels'] if 'labels' in inputs else input_ids,
             vision,
             encode=True
         )
