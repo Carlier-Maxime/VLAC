@@ -3,6 +3,7 @@ import glob
 import io
 import json
 import os
+from copy import deepcopy
 from pathlib import Path
 from typing import Callable, Self, Iterable, Any, List, Union, IO
 
@@ -118,7 +119,8 @@ class VLACDataset(torch.utils.data.Dataset):
     def shard(self, nb_split: int, index_split: int) -> Self:
         assert 0 < nb_split <= self.parquet_count, f"nb_split must be in range [1, {self.parquet_count}]"
         assert 0 <= index_split < nb_split, f"index_split must be in range [0, {nb_split - 1}]"
-        subdataset = VLACDataset(None, self.keys_read, self.keys_out, max(1, self.cache.max_elements // nb_split))
+        subdataset = deepcopy(self)
+        subdataset.cache.max_elements = max(1, self.cache.max_elements // nb_split)
         subdataset.files = self.files[index_split::nb_split]
         subdataset.parquet_count = len(subdataset.files)
         subdataset.average_memory_per_parquet = self.average_memory_per_parquet
