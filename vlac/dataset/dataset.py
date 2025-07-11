@@ -10,6 +10,7 @@ from typing import Callable, Self, Iterable, Any, List, Union, IO
 import PIL.Image as Image
 import numpy as np
 import pandas as pd
+from pyarrow import parquet as pq
 import torch.utils.data
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Subset
@@ -22,7 +23,7 @@ from vlac.dataset.config import *
 from vlac.dataset.format.format import FormatDataset
 from vlac.dataset.format.format_dict import FormatDictDataset
 from vlac.dataset.format.format_parquets import FormatParquetsDataset
-from vlac.utils.cache import PandasParquetCache
+from vlac.utils.cache import PyarrowParquetFileCache
 from vlac.video import VideoReader
 
 IM_START_END = f"{DEFAULT_IM_START_TOKEN}{DEFAULT_IM_END_TOKEN}"
@@ -30,7 +31,7 @@ IM_START_END = f"{DEFAULT_IM_START_TOKEN}{DEFAULT_IM_END_TOKEN}"
 
 class VLACDataset(torch.utils.data.Dataset):
     def __init__(self, path: str | None, keys_read: Tuple[str, ...] = None, keys_out: Tuple[str, ...] = None, cache_max_files: int = 8, **_):
-        self.cache = PandasParquetCache(cache_max_files)
+        self.cache = PyarrowParquetFileCache(cache_max_files)
         self.keys_read = keys_read
         self.keys_out = keys_out
         if path is None: return
@@ -81,10 +82,14 @@ class VLACDataset(torch.utils.data.Dataset):
         if self.keys_out is None: return {k: self.__decode_data(k, out[k]) for k in self.keys_read}
         return {ko: self.__decode_data(kr, out[kr]) for kr, ko in zip(self.keys_read, self.keys_out)}
 
+    def read_and_map_row(self, pq_file: pq.ParquetFile, index: int):
+        table = pq_file.read_row_group(index)
+        return self.map_keys({col: table[col][0].as_py() for col in table.column_names})
+
     def __getitem__(self, index):
-        i, df = self._get_df_for_sample_index(index)
+        i, pq_file = self._get_pq_file_for_sample_index(index)
         local_index = self._get_relative_index(index, i, self.max_indices_per_parquet)
-        return self.map_keys(df.iloc[local_index])
+        return self.read_and_map_row(pq_file, local_index)
 
     def __next__(self):
         raise NotImplementedError
@@ -100,7 +105,7 @@ class VLACDataset(torch.utils.data.Dataset):
                 return i
         raise ValueError(f"index {global_index} is probably out of range or info.json is incorrect")
 
-    def _get_df_for_sample_index(self, index) -> Tuple[int, pd.DataFrame]:
+    def _get_pq_file_for_sample_index(self, index) -> Tuple[int, pq.ParquetFile]:
         i = self._get_index_of(index, self.max_indices_per_parquet)
         return i, self.cache.get(self.files[i])
 
@@ -261,11 +266,12 @@ class MinerlDataset(VLACDataset):
         }
 
     def __getitem__(self, index):
-        i, df = self._get_df_for_sample_index(index)
+        i, pq_file = self._get_pq_file_for_sample_index(index)
         df_frame_index = self._get_relative_index(index, i, self.max_indices_per_parquet)
-        max_indices_per_samples = (df['vid_len'].to_numpy() - 1).cumsum() - 1
+        vid_len = pq_file.read(columns=["vid_len"]).column("vid_len").to_numpy()
+        max_indices_per_samples = (vid_len - 1).cumsum() - 1
         local_index = self._get_index_of(df_frame_index, max_indices_per_samples)
-        data = self.map_keys(df.iloc[local_index])
+        data = self.read_and_map_row(pq_file, local_index)
         vid_frame_index = self._get_relative_index(df_frame_index, local_index, max_indices_per_samples)
         res = self.__make_history(data, vid_frame_index)
         res['fps'] = data['fps']

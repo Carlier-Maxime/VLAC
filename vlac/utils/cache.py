@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from collections import OrderedDict
 
 import pandas as pd
+from pyarrow import parquet as pq
 
 
 class SimpleCache(ABC):
@@ -35,3 +36,13 @@ class PandasParquetCache(SimpleCache):
 
     def gen_from_key(self, key):
         return pd.read_parquet(key)
+
+
+class PyarrowParquetFileCache(SimpleCache):
+    def __init__(self, max_loaded_files: int):
+        super().__init__(max_loaded_files)
+
+    def gen_from_key(self, key, **kwargs):
+        pq_file = pq.ParquetFile(key)
+        assert pq_file.metadata.num_rows == pq_file.num_row_groups, f"parquet file {key} must be formatted with one row per row group for performance issue with shuffle access"
+        return pq_file

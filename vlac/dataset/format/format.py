@@ -168,7 +168,7 @@ class FormatDataset(ABC):
         limit = int(df.shape[0] * (parquet_size / mem)) if mem > parquet_size else df.shape[0]
         save_df = df.iloc[:limit]
         infos = self.get_infos_of_parquet(save_df)
-        save_df.to_parquet(output_path)
+        save_df.to_parquet(output_path, engine="pyarrow", row_group_size=1, index=False)
         df = df.iloc[limit:]
         return df, infos
 
