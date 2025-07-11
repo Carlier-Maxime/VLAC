@@ -20,6 +20,8 @@ class VLACConfig(PretrainedConfig):
             text_embeds_type: str = './vila-u-7b-256/text_embeddings',
             text_tokenizer_type: str = './vila-u-7b-256/llm',
             project_multimodal_type: str = 'linear',
+            mm_hidden_size: int = 1024,
+            hidden_size: int = 4096,
             **kwargs
     ):
         super().__init__(**kwargs)
@@ -29,6 +31,8 @@ class VLACConfig(PretrainedConfig):
         self.text_embeds_type = text_embeds_type
         self.text_tokenizer_type = text_tokenizer_type
         self.project_multimodal_type = project_multimodal_type
+        self.mm_hidden_size = mm_hidden_size
+        self.hidden_size = hidden_size
 
 
 class VLAC(PreTrainedModel):
