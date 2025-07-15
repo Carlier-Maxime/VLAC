@@ -93,7 +93,7 @@ class FormatDataset(ABC):
         iterator = self.get_iterator(input_path, parquet_size)
         if resume_info is not None:
             for k, v in resume_info.items():
-                if k.endswith(_pp): infos_pp[k[:-len(_pp)]] = v
+                if k.endswith(_pp) and not k.startswith(("average_", "max_")): infos_pp[k[:-len(_pp)]] = v
             save_paths = sorted(glob.glob(os.path.join(output_path, "*.parquet")))
             i += resume_info["parquet_count"]
             assert i-1 == len(save_paths)
