@@ -83,8 +83,24 @@ class VLACDataset(torch.utils.data.Dataset):
         return {ko: self.__decode_data(kr, out[kr]) for kr, ko in zip(self.keys_read, self.keys_out)}
 
     def read_and_map_row(self, pq_file: pq.ParquetFile, index: int):
-        table = pq_file.read_row_group(index)
-        return self.map_keys({col: table[col][0].as_py() for col in table.column_names})
+        cum = 0
+        rg_idx = None
+        idx_in_rg = None
+        for i in range(pq_file.num_row_groups):
+            length = pq_file.metadata.row_group(i).num_rows
+            if cum + length > index:
+                rg_idx = i
+                idx_in_rg = index - cum
+                break
+            cum += length
+        if rg_idx is None: raise ValueError(f"{index=} is out of range")
+
+        it = pq_file.iter_batches(batch_size=1, row_groups=[rg_idx])
+        for j, batch in enumerate(it):
+            if j == idx_in_rg:
+                table = batch.to_table()
+                return self.map_keys({col: table[col][0].as_py() for col in table.column_names})
+        raise ValueError(f"{idx_in_rg=} is out of range")
 
     def __getitem__(self, index):
         i, pq_file = self._get_pq_file_for_sample_index(index)

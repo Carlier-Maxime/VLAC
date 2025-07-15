@@ -163,12 +163,17 @@ class FormatDataset(ABC):
             "samples": df.shape[0]
         }
 
-    def save_parquet(self, df: pd.DataFrame, output_path: str, parquet_size: int) -> Tuple[pd.DataFrame, dict]:
+    def save_parquet(self, df: pd.DataFrame, output_path: str, parquet_size: int, row_group_size_mb: int = 16) -> Tuple[pd.DataFrame, dict]:
         mem = df.memory_usage(deep=True).sum()
         limit = int(df.shape[0] * (parquet_size / mem)) if mem > parquet_size else df.shape[0]
         save_df = df.iloc[:limit]
         infos = self.get_infos_of_parquet(save_df)
-        save_df.to_parquet(output_path, engine="pyarrow", row_group_size=1, index=False)
+
+        row_group_mem = row_group_size_mb << 20
+        row_per_group = mem / row_group_mem
+        row_group_size = max(min(int(limit // row_per_group), int(limit * 0.0001)), 1)
+
+        save_df.to_parquet(output_path, engine="pyarrow", row_group_size=row_group_size, index=False)
         df = df.iloc[limit:]
         return df, infos
 

@@ -44,5 +44,5 @@ class PyarrowParquetFileCache(SimpleCache):
 
     def gen_from_key(self, key, **kwargs):
         pq_file = pq.ParquetFile(key)
-        assert pq_file.metadata.num_rows == pq_file.num_row_groups, f"parquet file {key} must be formatted with one row per row group for performance issue with shuffle access"
+        assert pq_file.num_row_groups >= 10000 or pq_file.num_row_groups == pq_file.metadata.num_rows, f"parquet file {key} must be formatted with ten-thousand row group or more for performance issue with shuffle access"
         return pq_file
