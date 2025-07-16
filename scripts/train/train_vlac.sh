@@ -30,4 +30,4 @@ torchrun --nproc_per_node=1 --master_port=25001 \
     --gradient_checkpointing False \
     --dataloader_num_workers 8 \
     --lazy_preprocess True \
-    --split_batches True
+    --accelerator_config "{\"split_batches\": true}"
