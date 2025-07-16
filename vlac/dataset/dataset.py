@@ -86,6 +86,9 @@ class VLACDataset(torch.utils.data.Dataset):
         cum = 0
         rg_idx = None
         idx_in_rg = None
+        if pq_file.num_row_groups == pq_file.metadata.num_rows:
+            table = pq_file.read_row_group(index)
+            return self.map_keys({col: table[col][0].as_py() for col in table.schema.names})
         for i in range(pq_file.num_row_groups):
             length = pq_file.metadata.row_group(i).num_rows
             if cum + length > index:
@@ -95,11 +98,14 @@ class VLACDataset(torch.utils.data.Dataset):
             cum += length
         if rg_idx is None: raise ValueError(f"{index=} is out of range")
 
-        it = pq_file.iter_batches(batch_size=1, row_groups=[rg_idx])
+        batch_size = 1024
+        batch_idx = idx_in_rg // batch_size
+        in_batch_idx = idx_in_rg % batch_size
+
+        it = pq_file.iter_batches(batch_size=batch_size, row_groups=[rg_idx])
         for j, batch in enumerate(it):
-            if j == idx_in_rg:
-                table = batch.to_table()
-                return self.map_keys({col: table[col][0].as_py() for col in table.column_names})
+            if j == batch_idx:
+                return self.map_keys({col: batch[col][in_batch_idx].as_py() for col in batch.schema.names})
         raise ValueError(f"{idx_in_rg=} is out of range")
 
     def __getitem__(self, index):
