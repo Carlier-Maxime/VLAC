@@ -63,9 +63,10 @@ def sample_from_logits(logits, temperature=1.0, top_k=None, top_p=None):
         logits = top_k_logits(logits, top_k)
 
     # Detect bad values in logits before softmax
-    if torch.isnan(logits).any() or torch.isinf(logits).any():
-        print("⚠️  WARNING: NaN or Inf in logits — replacing with -inf")
-        logits = torch.where(torch.isnan(logits) | torch.isinf(logits), torch.full_like(logits, -float('inf')), logits)
+    bad_logits = torch.isnan(logits) | torch.isinf(logits)
+    if bad_logits.any():
+        print(f"⚠️  WARNING: Found {bad_logits.sum().item()} NaN/Inf  values in logits — replacing with -inf")
+        logits = torch.where(bad_logits, torch.full_like(logits, -float('inf')), logits)
 
     probs = F.softmax(logits, dim=-1)
 
