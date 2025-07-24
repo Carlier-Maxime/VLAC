@@ -1,29 +1,27 @@
-import PIL.Image as Image
-import torch
-
 from vlac import VLAC, VLACConfig
+from vlac.dataset.dataset import getDataset
+from vlac.utils.memory_utils import print_memory_usage_for_model
 
 
 def load_from_json():
-    device_map = {"vision_tower": "cuda:1", "mm_projector": "cuda:1", "llm": "cuda:1"}
     config = VLACConfig.from_json_file("configs/config.json")
-    config.device_map = device_map
     return VLAC(config)
 
 
-def load_pretrain():
-    vlac = VLAC.from_pretrained("checkpoints/vlac-train-vision_tower/checkpoint-256")
-    vlac.vision_tower.to(vlac.config.device_map["vision_tower"])
-    return vlac
-
-
 def main():
-    vlac = load_from_json()
-    prompt = """You are a PNJ in a video game. Player talk you : "Can you give me a creative stuff ?". """
-    img = Image.open("/media/hdd/datasets/coyo-700m/tars/000001334_000001392/4432406834625.png")
-    out_vision = vlac.encode_decode_images(img)[0].to(torch.float32).add_(1).mul_(127.5).clamp_(0, 255)
-    Image.fromarray(out_vision.permute(0, 2, 3, 1).to(torch.uint8)[0].cpu().numpy()).save("output_image.png")
-    # print("Generated response:", response)
+    vlac = VLAC.from_pretrained('/media/hdd/maxime_carlier/checkpoints/vlac/train-vlac/checkpoint-116224').to("cuda:1")
+    print_memory_usage_for_model(vlac)
+    dataset = getDataset(
+        "minerl",
+        img_preprocess=vlac.vision_tower.image_processor,
+        tokenizer=vlac.text_tokenizer,
+        history_len=4,
+        use_prompt_format=True
+    )
+    data = dataset[0]
+    out_prompt, out_vision = vlac(data["prompt_in"], data["imgs"][:-1])
+    print(out_prompt)
+    print(out_vision)
 
 
 if __name__ == "__main__":

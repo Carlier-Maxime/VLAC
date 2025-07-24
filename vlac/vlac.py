@@ -75,7 +75,7 @@ class VLAC(PreTrainedModel):
     def text_embeds(self):
         return self.llm.get_input_embeddings()
 
-    def forward(self, prompt, vision, max_len: int = 128, generation_nums: int = 1, cfg: float = 3, **_):
+    def forward(self, prompt, vision, max_len: int = 128, generation_nums: int = 1, **_):
         _, inputs_embeds, attention_mask = self.make_multimodal_embeds(prompt, vision)
         image_ids = []
         outputs = self.vlm.generate(
@@ -84,8 +84,7 @@ class VLAC(PreTrainedModel):
             max_new_tokens=self.vision_tower.image_tokens,
             pad_token_id=self.text_tokenizer.eos_token_id,
             eos_token_id=self.text_tokenizer.eos_token_id,
-            image_ids=image_ids,
-            cfg=cfg
+            image_ids=image_ids
         )
         out_prompt = self.text_tokenizer.decode(outputs.flatten(), skip_special_tokens=True)
         out_vision = None
@@ -97,7 +96,7 @@ class VLAC(PreTrainedModel):
         input_ids = inputs["input_ids"]
         attention_mask = inputs["attention_mask"]
         images = self.prepare_images(vision)
-        _, _, attention_mask, _, multimodal_embeds, multimodal_tokens = self.vlm.prepare_for_multimodal(input_ids, None, attention_mask, input_ids, images)
+        _, _, attention_mask, multimodal_embeds, multimodal_tokens = self.vlm.prepare_for_multimodal(input_ids, None, attention_mask, input_ids, images)
         return multimodal_tokens, multimodal_embeds, attention_mask
 
     def prepare_images(self, images):

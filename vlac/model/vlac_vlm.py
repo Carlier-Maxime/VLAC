@@ -170,20 +170,29 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             output_hidden_states: Optional[bool] = None,
             return_dict: Optional[bool] = None,
             seqlens_in_batch: Optional[torch.LongTensor] = None,
-            image_ids=None
+            image_ids=None,
     ):
         if image_ids is None:
             image_ids = []
+        while len(image_ids) < attention_mask.shape[0]:
+            image_ids.append([])
         if input_ids is not None:
             if inputs_embeds is not None:
                 raise UnsupportedOperation("You cannot specify both input_ids and inputs_embeds at the same time")
-            if input_ids[:, -1].eq(self.IM_END_TOKEN_INDEX).any():
-                raise RuntimeError("TODO : make image")
-            input_ids, position_ids, attention_mask, inputs_embeds, labels = self.prepare_for_multimodal(input_ids, position_ids, attention_mask, labels, None)
+            mask = input_ids[:, -1].eq(self.IM_END_TOKEN_INDEX)
+            for i in range(len(mask)):
+                if not mask[i]: continue
+                if len(image_ids[i]) == 0:
+                    input_ids[i, -1] = 0
+                    continue
+                embeds = torch.stack(image_ids[i])
+                _, code = self.vlac.vision_tower.rqtransformer.generate(embeds, self.vlac.vision_tower.rqvaesiglip)
+                raise RuntimeError("TODO: Make Image")
+            _, position_ids, attention_mask, inputs_embeds, labels = self.prepare_for_multimodal(input_ids, position_ids, attention_mask, labels, None)
             inputs_embeds = inputs_embeds
 
         outputs = self.llm.model(
-            input_ids=input_ids,
+            input_ids=None,
             attention_mask=attention_mask,
             position_ids=position_ids,
             past_key_values=past_key_values,
@@ -208,17 +217,17 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             )
 
         embeds = self.decoder(hidden_states).to(torch.float).to(self.vlac.vision_tower.device)
-        model_aux = self.vlac.vision_tower.rqvaesiglip
         if labels is not None:
-            _, code, vision_logits = self.vlac.vision_tower.rqtransformer.generate(embeds, model_aux, return_logits=True)
+            _, code, vision_logits = self.vlac.vision_tower.rqtransformer.generate(embeds, self.vlac.vision_tower.rqvaesiglip, return_logits=True)
             loss += F.cross_entropy(
                 vision_logits.reshape(-1, vision_logits.shape[-1]),
                 torch.where(labels.ge(vocab_txt), labels.sub(vocab_txt), IGNORE_INDEX).view(-1),
                 ignore_index=IGNORE_INDEX
             )
-        else:
-            _, code = self.vlac.vision_tower.rqtransformer.generate(embeds, model_aux)
-        # image_ids.append(code)
+        elif input_ids is not None:
+            mask = input_ids[:, -1].eq(self.IM_START_TOKEN_INDEX) | torch.tensor([len(ids) > 0 for ids in image_ids], dtype=torch.bool, device=input_ids.device)
+            for i in range(len(mask)):
+                if mask[i]: image_ids[i].append(embeds[i, -1:])
 
         return CausalLMOutputWithPast(
             loss=loss,
