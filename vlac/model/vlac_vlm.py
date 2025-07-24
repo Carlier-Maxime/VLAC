@@ -216,18 +216,23 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
                 ignore_index=IGNORE_INDEX
             )
 
-        embeds = self.decoder(hidden_states).to(torch.float).to(self.vlac.vision_tower.device)
         if labels is not None:
-            _, code, vision_logits = self.vlac.vision_tower.rqtransformer.generate(embeds, self.vlac.vision_tower.rqvaesiglip, return_logits=True)
+            mask = labels.ge(vocab_txt).all(dim=2)
+            len_of_im = mask.sum(dim=1).unique()
+            assert len_of_im.shape[0], "a different number of images in each sample in batch is not supported yet"
+            embeds = self.decoder(hidden_states[mask]).to(torch.float).to(self.vlac.vision_tower.device)
+            embeds = embeds.view(B, len_of_im[0], embeds.shape[-1])
+            _, _, vision_logits = self.vlac.vision_tower.rqtransformer.generate(embeds, self.vlac.vision_tower.rqvaesiglip, return_logits=True)
             loss += F.cross_entropy(
                 vision_logits.reshape(-1, vision_logits.shape[-1]),
-                torch.where(labels.ge(vocab_txt), labels.sub(vocab_txt), IGNORE_INDEX).view(-1),
+                labels[mask].sub(vocab_txt).view(-1),
                 ignore_index=IGNORE_INDEX
             )
         elif input_ids is not None:
             mask = input_ids[:, -1].eq(self.IM_START_TOKEN_INDEX) | torch.tensor([len(ids) > 0 for ids in image_ids], dtype=torch.bool, device=input_ids.device)
+            embeds = self.decoder(hidden_states[:, -1:]).to(torch.float).to(self.vlac.vision_tower.device)
             for i in range(len(mask)):
-                if mask[i]: image_ids[i].append(embeds[i, -1:])
+                if mask[i]: image_ids[i].append(embeds[i])
 
         return CausalLMOutputWithPast(
             loss=loss,
