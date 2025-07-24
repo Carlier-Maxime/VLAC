@@ -121,7 +121,7 @@ class RQTransformer(PreTrainedModel):
     def forward(self, embed_from_body, code, model_aux=None):
         B, seq_len, D = code.shape
 
-        depth_ctx = self.embed_with_model_aux(code, model_aux)
+        depth_ctx = self.embed_with_model_aux(code, model_aux).to(torch.float32)
         depth_ctx = torch.cumsum(depth_ctx, dim=-2)
         depth_ctx = self.in_mlp_1(depth_ctx)
 

@@ -222,10 +222,12 @@ class VLACForCausalLM(PreTrainedModel, GenerationMixin):
             assert len_of_im.shape[0], "a different number of images in each sample in batch is not supported yet"
             embeds = self.decoder(hidden_states[mask]).to(torch.float).to(self.vlac.vision_tower.device)
             embeds = embeds.view(B, len_of_im[0], embeds.shape[-1])
-            _, _, vision_logits = self.vlac.vision_tower.rqtransformer.generate(embeds, self.vlac.vision_tower.rqvaesiglip, return_logits=True)
+            vision_labels = labels[mask].sub(vocab_txt)
+            vision_labels = vision_labels.view(B, len_of_im[0], vision_labels.shape[-1])
+            vision_logits = self.vlac.vision_tower.rqtransformer(embeds, vision_labels, self.vlac.vision_tower.rqvaesiglip)
             loss += F.cross_entropy(
                 vision_logits.reshape(-1, vision_logits.shape[-1]),
-                labels[mask].sub(vocab_txt).view(-1),
+                vision_labels.view(-1),
                 ignore_index=IGNORE_INDEX
             )
         elif input_ids is not None:
