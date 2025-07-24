@@ -71,19 +71,17 @@ def weights_by_file(weights: dict, index_path: str) -> dict:
     return new_weights
 
 
-def replace_weights_in_safetensors(base_path: str, replacement_path: str, key_prefix: str = "", output_path: str = None):
+def replace_weights_in_safetensors(base_path: str, replacement_path: str, output_path: str, key_prefix: str = ""):
+    assert base_path != output_path, "base path and output path must be different."
     weights = load_weights(base_path)
     replace_weights = load_weights(replacement_path)
-    if key_prefix[-1] != '.': key_prefix += '.'
+    if len(key_prefix) > 0 and key_prefix[-1] != '.': key_prefix += '.'
     for k in replace_weights.keys():
         key = key_prefix + k
         if key in weights:
             weights[key] = replace_weights[k]
         else:
             print(f"key '{key}' not found in base model.")
-
-    if output_path is None:
-        output_path = base_path
     index_path = __get_index_path(base_path)
 
     if os.path.exists(index_path):
